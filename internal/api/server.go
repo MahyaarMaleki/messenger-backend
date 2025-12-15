@@ -34,6 +34,6 @@ func NewServer(cfg *config.Config, store *db.Store) (*Server, error) {
 	return server, nil
 }
 
-func (server *Server) Start(address string) error {
-	return http.ListenAndServe(address, server.router)
+func (server *Server) Start() error {
+	return http.ListenAndServe(server.config.HTTPServerAddress, server.router)
 }
