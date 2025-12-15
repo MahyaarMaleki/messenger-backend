@@ -4,13 +4,16 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	HTTPServerAddress string
-	DBSource          string
+	HTTPServerAddress   string
+	DBSource            string
+	TokenSymmetricKey   string
+	AccessTokenDuration time.Duration
 }
 
 func Load() (*Config, error) {
@@ -19,8 +22,10 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		HTTPServerAddress: getEnv("HTTP_SERVER_ADDRESS", "0.0.0.0:8080"),
-		DBSource:          getEnv("DB_SOURCE", ""),
+		HTTPServerAddress:   getEnv("HTTP_SERVER_ADDRESS", "0.0.0.0:8080"),
+		DBSource:            getEnv("DB_SOURCE", ""),
+		TokenSymmetricKey:   getEnv("TOKEN_SYMMETRIC_KEY", ""),
+		AccessTokenDuration: getDurationEnv("ACCESS_TOKEN_DURATION", 15*time.Minute),
 	}
 
 	if cfg.DBSource == "" {
@@ -35,5 +40,19 @@ func getEnv(key, fallback string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
 	}
+
+	return fallback
+}
+
+// Helper to read duration env
+func getDurationEnv(key string, fallback time.Duration) time.Duration {
+	if value, exists := os.LookupEnv(key); exists {
+		duration, err := time.ParseDuration(value)
+		if err == nil {
+			return duration
+		}
+		log.Printf("Invalid duration for %s, using fallback: %v", key, fallback)
+	}
+
 	return fallback
 }
