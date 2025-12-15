@@ -38,6 +38,20 @@ migrate-down:
 migrate-status:
 	goose -dir $(GOOSE_MIGRATION_DIR) status
 
-# -- Code Generation --
-sqlc:
-	sqlc generate
+# -- Docker Helpers --
+
+# Start the DB container
+docker-up:
+	docker-compose up -d
+
+# Stop the DB container
+docker-down:
+	docker-compose down
+
+# Reset the DB (Stop, Delete Volume, Start)
+docker-reset:
+	docker-compose down -v
+	docker-compose up -d
+	# Wait a second for DB to be ready, then migrate
+	sleep 2
+	make migrate-up
