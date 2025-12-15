@@ -13,7 +13,7 @@ type Config struct {
 	DBSource          string
 }
 
-func LoadConfig() (*Config, error) {
+func Load() (*Config, error) {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, relying on system environment variables")
 	}
