@@ -1,0 +1,39 @@
+package api
+
+import (
+	"fmt"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/mahyaarmaleki/messenger-backend/internal/config"
+	"github.com/mahyaarmaleki/messenger-backend/internal/db"
+	"github.com/mahyaarmaleki/messenger-backend/internal/util"
+)
+
+type Server struct {
+	config     *config.Config
+	store      *db.Store
+	tokenMaker *util.PasetoMaker
+	router     *chi.Mux
+}
+
+func NewServer(cfg *config.Config, store *db.Store) (*Server, error) {
+	tokenMaker, err := util.NewPasetoMaker(cfg.TokenSymmetricKey)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create token maker: %w", err)
+	}
+
+	server := &Server{
+		config:     cfg,
+		store:      store,
+		tokenMaker: tokenMaker,
+	}
+
+	server.setupRouter()
+
+	return server, nil
+}
+
+func (server *Server) Start(address string) error {
+	return http.ListenAndServe(address, server.router)
+}
