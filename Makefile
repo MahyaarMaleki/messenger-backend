@@ -6,10 +6,9 @@ endif
 
 # Variables
 BINARY_NAME=api
-# Exporting these lets Goose read them automatically
 GOOSE_DRIVER=postgres
 GOOSE_DBSTRING=$(DB_SOURCE)
-GOOSE_MIGRATION_DIR=db/migrations
+GOOSE_MIGRATION_DIR=database/migrations
 
 # -- Build & Run --
 build:
