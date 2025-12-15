@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"github.com/mahyaarmaleki/messenger-backend/internal/api"
 	"github.com/mahyaarmaleki/messenger-backend/internal/config"
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
 )
@@ -22,5 +23,12 @@ func main() {
 
 	store := db.NewStore(connPool)
 
-	// TODO: set up the server
+	server, err := api.NewServer(cfg, store)
+	if err != nil {
+		log.Fatal("cannot initialize server: ", err)
+	}
+
+	if err = server.Start(); err != nil {
+		log.Fatal("cannot start server: ", err)
+	}
 }
