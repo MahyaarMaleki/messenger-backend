@@ -20,3 +20,10 @@ func errorCode(err error) string {
 
 	return ""
 }
+
+// errorResponse wraps the error message in a JSON object
+func errorResponse(err error) map[string]any {
+	return map[string]any{
+		"error": err.Error(),
+	}
+}
