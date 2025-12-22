@@ -16,7 +16,7 @@ func main() {
 
 	connPool, err := db.NewConnection(cfg.DBSource)
 	if err != nil {
-		log.Fatal("cannot connect to database: ", err)
+		log.Fatal(err)
 	}
 
 	defer connPool.Close()
