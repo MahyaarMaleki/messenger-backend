@@ -9,8 +9,10 @@ import (
 )
 
 const (
-	ForeignKeyViolation = "23503"
-	UniqueViolation     = "23505"
+	ForeignKeyViolation    = "23503"
+	UniqueViolation        = "23505"
+	InternalServerErrorMsg = "Something went wrong"
+	InvalidJsonMsg         = "Invalid JSON format"
 )
 
 type validationResponse struct {
