@@ -79,25 +79,25 @@ func (server *Server) createUser(w http.ResponseWriter, r *http.Request) {
 // listUsers is used for search/filter
 func (server *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("search")
-	pageID, _ := strconv.Atoi(r.URL.Query().Get("page_id"))
-	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	encoder := json.NewEncoder(w)
 
 	// Defaults if params are missing/invalid
-	if pageID < 1 {
-		pageID = 1
+	if page < 1 {
+		page = 1
 	}
-	if pageSize < 5 {
-		pageSize = 5
+	if limit < 5 {
+		limit = 5
 	}
-	if pageSize > 100 {
-		pageSize = 100
+	if limit > 100 {
+		limit = 100
 	}
 
 	arg := db.ListUsersParams{
 		Column1: search,
-		Limit:   int32(pageSize),
-		Offset:  int32((pageID - 1) * pageSize),
+		Limit:   int32(limit),
+		Offset:  int32((page - 1) * limit),
 	}
 
 	users, err := server.store.ListUsers(r.Context(), arg)
