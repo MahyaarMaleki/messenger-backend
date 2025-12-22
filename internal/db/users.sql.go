@@ -132,15 +132,25 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 const listUsers = `-- name: ListUsers :many
 SELECT id, username, email, password_hash, first_name, last_name, bio, birthday, avatar_url, created_at, updated_at FROM users
 WHERE
-    username ILIKE '%' || $1 || '%'
-   OR first_name ILIKE '%' || $1 || '%'
-   OR last_name ILIKE '%' || $1 || '%'
+    -- If $1 (query) is empty, match everything (List All).
+    -- If $1 has text, search username OR first/last names.
+    ($1::text = '' OR
+    username ILIKE '%' || $1 || '%' OR
+    first_name ILIKE '%' || $1 || '%' OR
+    last_name ILIKE '%' || $1 || '%')
 ORDER BY username
-LIMIT 50
+LIMIT $2
+OFFSET $3
 `
 
-func (q *Queries) ListUsers(ctx context.Context, dollar_1 pgtype.Text) ([]User, error) {
-	rows, err := q.db.Query(ctx, listUsers, dollar_1)
+type ListUsersParams struct {
+	Column1 string `json:"column1"`
+	Limit   int32  `json:"limit"`
+	Offset  int32  `json:"offset"`
+}
+
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]User, error) {
+	rows, err := q.db.Query(ctx, listUsers, arg.Column1, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
