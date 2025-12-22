@@ -1,47 +1,17 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"time"
+	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
-	"github.com/google/uuid"
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
 	"github.com/mahyaarmaleki/messenger-backend/internal/util"
 )
-
-// createUserRequest defines the expected JSON body for registration
-type createUserRequest struct {
-	Username  string `json:"username" validate:"required,min=3,max=30"`
-	Password  string `json:"password" validate:"required"`
-	Email     string `json:"email" validate:"required,email"`
-	FirstName string `json:"firstName" validate:"required,max=50"`
-	LastName  string `json:"lastName" validate:"required,max=50"`
-}
-
-// userResponse is the safe DTO that excludes sensitive fields like PasswordHash
-type userResponse struct {
-	ID        uuid.UUID `json:"id"`
-	Username  string    `json:"username"`
-	Email     string    `json:"email"`
-	FirstName string    `json:"firstName"`
-	LastName  string    `json:"lastName"`
-	CreatedAt time.Time `json:"createdAt"`
-}
-
-// newUserResponse converts a database user model to an API response
-func newUserResponse(user db.User) userResponse {
-	return userResponse{
-		ID:        user.ID,
-		Username:  user.Username,
-		Email:     user.Email,
-		FirstName: user.FirstName,
-		LastName:  user.LastName,
-		CreatedAt: user.CreatedAt.Time, // Extracts time.Time from pgtype.Timestamptz
-	}
-}
 
 // createUser handles new user registration
 func (server *Server) createUser(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +22,7 @@ func (server *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	// Decode JSON
 	if err := decoder.Decode(req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		_ = encoder.Encode(errorResponse(err))
+		_ = encoder.Encode(errorResponse(InvalidJsonMsg))
 		return
 	}
 
@@ -75,7 +45,7 @@ func (server *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	hashedPassword, err := util.HashPassword(req.Password)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = encoder.Encode(errorResponse(err))
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
 		return
 	}
 
@@ -93,12 +63,12 @@ func (server *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		// Handle "Unique Violation"
 		if errorCode(err) == UniqueViolation {
 			w.WriteHeader(http.StatusForbidden)
-			_ = encoder.Encode(errorResponse(errors.New("username or email already exists")))
+			_ = encoder.Encode(errorResponse("Username or email already exists"))
 			return
 		}
 
 		w.WriteHeader(http.StatusInternalServerError)
-		_ = encoder.Encode(errorResponse(err))
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
 		return
 	}
 
@@ -106,9 +76,71 @@ func (server *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	_ = encoder.Encode(newUserResponse(user))
 }
 
+// listUsers is used for search/filter
+func (server *Server) listUsers(w http.ResponseWriter, r *http.Request) {
+	search := r.URL.Query().Get("search")
+	pageID, _ := strconv.Atoi(r.URL.Query().Get("page_id"))
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	encoder := json.NewEncoder(w)
+
+	// Defaults if params are missing/invalid
+	if pageID < 1 {
+		pageID = 1
+	}
+	if pageSize < 5 {
+		pageSize = 5
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	arg := db.ListUsersParams{
+		Column1: search,
+		Limit:   int32(pageSize),
+		Offset:  int32((pageID - 1) * pageSize),
+	}
+
+	users, err := server.store.ListUsers(r.Context(), arg)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	res := make([]userProfileResponse, len(users))
+	for i, user := range users {
+		res[i] = newUserProfileResponse(user)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = encoder.Encode(res)
+}
+
 // getUser handles fetching a user by their username
 func (server *Server) getUser(w http.ResponseWriter, r *http.Request) {
-	// We will implement this next:
-	// username := chi.URLParam(r, "username")
-	w.Write([]byte("Not implemented yet"))
+	username := chi.URLParam(r, "username")
+	encoder := json.NewEncoder(w)
+
+	// Simple validation
+	if username == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse("Missing username"))
+		return
+	}
+
+	user, err := server.store.GetUserByUsername(r.Context(), username)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			_ = encoder.Encode(errorResponse("User not found"))
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = encoder.Encode(newUserProfileResponse(user))
 }
