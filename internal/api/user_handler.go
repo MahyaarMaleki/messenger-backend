@@ -121,13 +121,6 @@ func (server *Server) getUser(w http.ResponseWriter, r *http.Request) {
 	username := chi.URLParam(r, "username")
 	encoder := json.NewEncoder(w)
 
-	// Simple validation
-	if username == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = encoder.Encode(errorResponse("Missing username"))
-		return
-	}
-
 	user, err := server.store.GetUserByUsername(r.Context(), username)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
