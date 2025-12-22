@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-playground/validator/v10"
 	"github.com/mahyaarmaleki/messenger-backend/internal/config"
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
 	"github.com/mahyaarmaleki/messenger-backend/internal/util"
@@ -15,6 +16,7 @@ type Server struct {
 	store      *db.Store
 	tokenMaker *util.PasetoMaker
 	router     *chi.Mux
+	validator  *validator.Validate
 }
 
 func NewServer(cfg *config.Config, store *db.Store) (*Server, error) {
@@ -27,6 +29,7 @@ func NewServer(cfg *config.Config, store *db.Store) (*Server, error) {
 		config:     cfg,
 		store:      store,
 		tokenMaker: tokenMaker,
+		validator:  validator.New(),
 	}
 
 	server.setupRouter()
