@@ -42,8 +42,12 @@ WHERE id = $1;
 -- name: ListUsers :many
 SELECT * FROM users
 WHERE
-    username ILIKE '%' || $1 || '%'
-   OR first_name ILIKE '%' || $1 || '%'
-   OR last_name ILIKE '%' || $1 || '%'
+    -- If $1 (query) is empty, match everything (List All).
+    -- If $1 has text, search username OR first/last names.
+    ($1::text = '' OR
+    username ILIKE '%' || $1 || '%' OR
+    first_name ILIKE '%' || $1 || '%' OR
+    last_name ILIKE '%' || $1 || '%')
 ORDER BY username
-LIMIT 50;
+LIMIT $2
+OFFSET $3;
