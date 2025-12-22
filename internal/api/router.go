@@ -29,6 +29,9 @@ func (server *Server) setupRouter() {
 		// User Routes
 		r.Route("/users", func(r chi.Router) {
 			r.Post("/", server.createUser)
+			r.Get("/", server.listUsers)
+			r.Get("/{username}", server.getUser)
+
 		})
 
 		// Session Routes
