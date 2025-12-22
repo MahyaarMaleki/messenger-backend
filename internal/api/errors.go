@@ -28,9 +28,9 @@ func errorCode(err error) string {
 	return ""
 }
 
-func errorResponse(err error) map[string]any {
-	return map[string]any{
-		"error": err.Error(),
+func errorResponse(errMsg string) map[string]string {
+	return map[string]string{
+		"error": errMsg,
 	}
 }
 
