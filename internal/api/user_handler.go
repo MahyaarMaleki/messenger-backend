@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
 	"github.com/mahyaarmaleki/messenger-backend/internal/util"
@@ -13,11 +14,11 @@ import (
 
 // createUserRequest defines the expected JSON body for registration
 type createUserRequest struct {
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-	Email     string `json:"email"`
-	FirstName string `json:"firstName"`
-	LastName  string `json:"lastName"`
+	Username  string `json:"username" validate:"required,min=3,max=30"`
+	Password  string `json:"password" validate:"required"`
+	Email     string `json:"email" validate:"required,email"`
+	FirstName string `json:"firstName" validate:"required,max=50"`
+	LastName  string `json:"lastName" validate:"required,max=50"`
 }
 
 // userResponse is the safe DTO that excludes sensitive fields like PasswordHash
@@ -48,14 +49,29 @@ func (server *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	encoder := json.NewEncoder(w)
 
-	// Decode and validate request body
+	// Decode JSON
 	if err := decoder.Decode(req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = encoder.Encode(errorResponse(err))
 		return
 	}
 
-	// hash the password
+	// Validate content
+	if err := server.validator.Struct(req); err != nil {
+		var valErrors validator.ValidationErrors
+		if errors.As(err, &valErrors) {
+			out := make(map[string]string)
+			for _, fe := range valErrors {
+				out[fe.Field()] = msgForTag(fe)
+			}
+		}
+
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(validationErrorResponse(err))
+		return
+	}
+
+	// Hash password
 	hashedPassword, err := util.HashPassword(req.Password)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
