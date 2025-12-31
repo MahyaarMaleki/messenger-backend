@@ -140,17 +140,17 @@ func (server *Server) getMe(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			w.WriteHeader(http.StatusNotFound)
-			encoder.Encode(errorResponse("User not found"))
+			_ = encoder.Encode(errorResponse("User not found"))
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)
-		encoder.Encode(errorResponse(InternalServerErrorMsg))
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
 		return
 	}
 
 	// 3. Return Private Response (Includes Email, ID)
 	w.WriteHeader(http.StatusOK)
-	encoder.Encode(newUserResponse(user))
+	_ = encoder.Encode(newUserResponse(user))
 }
 
 func (server *Server) updateUser(w http.ResponseWriter, r *http.Request) {
