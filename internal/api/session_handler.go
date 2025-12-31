@@ -201,4 +201,5 @@ func (server *Server) revokeSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+	_ = encoder.Encode(map[string]string{"message": "Session revoked successfully"})
 }
