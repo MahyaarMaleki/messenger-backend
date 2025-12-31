@@ -21,6 +21,20 @@ type (
 		Password string `json:"password" validate:"required"`
 	}
 
+	createSessionRequest struct {
+		Username string `json:"username" validate:"required"`
+		Password string `json:"password" validate:"required"`
+	}
+
+	createSessionResponse struct {
+		SessionID             uuid.UUID    `json:"sessionId"`
+		AccessToken           string       `json:"accessToken"`
+		AccessTokenExpiresAt  time.Time    `json:"accessTokenExpiresAt"`
+		RefreshToken          string       `json:"refreshToken"`
+		RefreshTokenExpiresAt time.Time    `json:"refreshTokenExpiresAt"`
+		User                  userResponse `json:"user"`
+	}
+
 	// userResponse (Private) - For Register/Login/Me
 	userResponse struct {
 		ID        uuid.UUID `json:"id"`
