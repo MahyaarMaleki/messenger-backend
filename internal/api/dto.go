@@ -62,6 +62,8 @@ type (
 		Email     string    `json:"email"`
 		FirstName string    `json:"firstName"`
 		LastName  string    `json:"lastName"`
+		Bio       string    `json:"bio"`
+		AvatarUrl string    `json:"avatarUrl"`
 		CreatedAt time.Time `json:"createdAt"`
 	}
 
@@ -91,6 +93,8 @@ func newUserResponse(user db.User) userResponse {
 		Email:     user.Email,
 		FirstName: user.FirstName,
 		LastName:  user.LastName,
+		Bio:       user.Bio.String,
+		AvatarUrl: user.AvatarUrl.String,
 		CreatedAt: user.CreatedAt.Time,
 	}
 }
