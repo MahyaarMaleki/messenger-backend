@@ -24,21 +24,36 @@ func (server *Server) setupRouter() {
 		_ = json.NewEncoder(w).Encode(map[string]string{"ping": "pong"})
 	})
 
-	// API Routes
+	// API routes
 	r.Route("/api", func(r chi.Router) {
-		// User Routes
+		// User routes
 		r.Route("/users", func(r chi.Router) {
+			// Public routes
 			r.Post("/", server.createUser)
 			r.Get("/", server.listUsers)
 			r.Get("/{username}", server.getUser)
 
+			// Protected routes
+			r.Group(func(r chi.Router) {
+				r.Use(server.AuthMiddleware)
+
+				r.Get("/{id}", server.getUser)
+				r.Put("/{id}", server.updateUser)
+			})
 		})
 
-		// Session Routes
+		// Session routes
 		r.Route("/sessions", func(r chi.Router) {
+			// Public routes
 			r.Post("/", server.createSession)
 			r.Post("/renew", server.renewAccessToken)
-			r.Post("/revoke", server.revokeSession)
+
+			// Protected routes
+			r.Group(func(r chi.Router) {
+				r.Use(server.AuthMiddleware)
+
+				r.Post("/revoke", server.revokeSession) // Logout
+			})
 		})
 	})
 
