@@ -37,8 +37,8 @@ func (server *Server) setupRouter() {
 			r.Group(func(r chi.Router) {
 				r.Use(server.AuthMiddleware)
 
-				r.Get("/{id}", server.getUser)
-				r.Put("/{id}", server.updateUser)
+				r.Get("/me", server.getMe)
+				r.Put("/", server.updateUser)
 			})
 		})
 
