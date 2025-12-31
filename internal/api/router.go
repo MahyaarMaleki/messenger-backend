@@ -36,7 +36,7 @@ func (server *Server) setupRouter() {
 
 		// Session Routes
 		r.Route("/sessions", func(r chi.Router) {
-			// Routes here
+			r.Post("/", server.createSession)
 		})
 	})
 
