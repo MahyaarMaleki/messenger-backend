@@ -26,6 +26,26 @@ type (
 		Password string `json:"password" validate:"required"`
 	}
 
+	renewAccessTokenRequest struct {
+		RefreshToken string `json:"refreshToken" validate:"required"`
+	}
+
+	revokeSessionRequest struct {
+		ID uuid.UUID `json:"id" validate:"required"`
+	}
+
+	updateUserRequest struct {
+		FirstName *string `json:"firstName"`
+		LastName  *string `json:"lastName"`
+		Bio       *string `json:"bio"`
+		AvatarUrl *string `json:"avatarUrl"`
+	}
+
+	renewAccessTokenResponse struct {
+		AccessToken          string    `json:"accessToken"`
+		AccessTokenExpiresAt time.Time `json:"accessTokenExpiresAt"`
+	}
+
 	createSessionResponse struct {
 		SessionID             uuid.UUID    `json:"sessionId"`
 		AccessToken           string       `json:"accessToken"`
