@@ -10,15 +10,10 @@ import (
 type (
 	createUserRequest struct {
 		Username  string `json:"username" validate:"required,min=3,max=30"`
-		Password  string `json:"password" validate:"required"`
+		Password  string `json:"password" validate:"required,min=8,max=32"`
 		Email     string `json:"email" validate:"required,email"`
 		FirstName string `json:"firstName" validate:"required,max=50"`
 		LastName  string `json:"lastName" validate:"required,max=50"`
-	}
-
-	loginUserRequest struct {
-		Username string `json:"username" validate:"required"`
-		Password string `json:"password" validate:"required"`
 	}
 
 	createSessionRequest struct {
@@ -35,10 +30,15 @@ type (
 	}
 
 	updateUserRequest struct {
-		FirstName *string `json:"firstName"`
-		LastName  *string `json:"lastName"`
-		Bio       *string `json:"bio"`
-		AvatarUrl *string `json:"avatarUrl"`
+		FirstName *string `json:"firstName" validate:"omitempty,max=50"`
+		LastName  *string `json:"lastName" validate:"omitempty,max=50"`
+		Bio       *string `json:"bio" validate:"omitempty,max=70"`
+		AvatarUrl *string `json:"avatarUrl" validate:"omitempty,url"`
+	}
+
+	changePasswordRequest struct {
+		OldPassword string `json:"oldPassword" validate:"required"`
+		NewPassword string `json:"newPassword" validate:"required,min=8,max=32"`
 	}
 
 	renewAccessTokenResponse struct {
