@@ -37,6 +37,8 @@ func (server *Server) setupRouter() {
 		// Session Routes
 		r.Route("/sessions", func(r chi.Router) {
 			r.Post("/", server.createSession)
+			r.Post("/renew", server.renewAccessToken)
+			r.Post("/revoke", server.revokeSession)
 		})
 	})
 
