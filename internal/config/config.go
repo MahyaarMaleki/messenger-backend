@@ -10,10 +10,11 @@ import (
 )
 
 type Config struct {
-	HTTPServerAddress   string
-	DBSource            string
-	TokenSymmetricKey   string
-	AccessTokenDuration time.Duration
+	HTTPServerAddress    string
+	DBSource             string
+	TokenSymmetricKey    string
+	AccessTokenDuration  time.Duration
+	RefreshTokenDuration time.Duration
 }
 
 func Load() (*Config, error) {
@@ -22,10 +23,11 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		HTTPServerAddress:   getEnv("HTTP_SERVER_ADDRESS", "0.0.0.0:8080"),
-		DBSource:            getEnv("DB_SOURCE", ""),
-		TokenSymmetricKey:   getEnv("TOKEN_SYMMETRIC_KEY", ""),
-		AccessTokenDuration: getDurationEnv("ACCESS_TOKEN_DURATION", 15*time.Minute),
+		HTTPServerAddress:    getEnv("HTTP_SERVER_ADDRESS", "0.0.0.0:8080"),
+		DBSource:             getEnv("DB_SOURCE", ""),
+		TokenSymmetricKey:    getEnv("TOKEN_SYMMETRIC_KEY", ""),
+		AccessTokenDuration:  getDurationEnv("ACCESS_TOKEN_DURATION", 15*time.Minute),
+		RefreshTokenDuration: getDurationEnv("REFRESH_TOKEN_DURATION", 24*time.Hour),
 	}
 
 	if cfg.DBSource == "" {
