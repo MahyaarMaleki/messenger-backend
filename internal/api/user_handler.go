@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
 	"github.com/mahyaarmaleki/messenger-backend/internal/util"
 )
@@ -136,4 +137,75 @@ func (server *Server) getUser(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_ = encoder.Encode(newUserProfileResponse(user))
+}
+
+// getMe returns the currently authenticated user's private info
+func (server *Server) getMe(w http.ResponseWriter, r *http.Request) {
+	encoder := json.NewEncoder(w)
+
+	// 1. Get UserID from Context (Set by AuthMiddleware)
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// 2. Fetch User
+	user, err := server.store.GetUserById(r.Context(), authPayload.UserID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			encoder.Encode(errorResponse("User not found"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	// 3. Return Private Response (Includes Email, ID)
+	w.WriteHeader(http.StatusOK)
+	encoder.Encode(newUserResponse(user))
+}
+
+func (server *Server) updateUser(w http.ResponseWriter, r *http.Request) {
+	req := new(updateUserRequest)
+	decoder := json.NewDecoder(r.Body)
+	encoder := json.NewEncoder(w)
+
+	if err := decoder.Decode(req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse(InvalidJsonMsg))
+		return
+	}
+
+	// Get auth token payload from Context
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// Prepare DB params
+	arg := db.UpdateUserParams{
+		ID: authPayload.UserID,
+		FirstName: pgtype.Text{
+			String: util.StringOrEmpty(req.FirstName),
+			Valid:  req.FirstName != nil,
+		},
+		LastName: pgtype.Text{
+			String: util.StringOrEmpty(req.LastName),
+			Valid:  req.LastName != nil,
+		},
+		Bio: pgtype.Text{
+			String: util.StringOrEmpty(req.Bio),
+			Valid:  req.Bio != nil,
+		},
+		AvatarUrl: pgtype.Text{
+			String: util.StringOrEmpty(req.AvatarUrl),
+			Valid:  req.AvatarUrl != nil,
+		},
+	}
+
+	updatedUser, err := server.store.UpdateUser(r.Context(), arg)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = encoder.Encode(newUserResponse(updatedUser))
 }
