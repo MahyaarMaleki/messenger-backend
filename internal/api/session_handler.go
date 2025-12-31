@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
@@ -92,4 +93,112 @@ func (server *Server) createSession(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_ = encoder.Encode(res)
+}
+
+func (server *Server) renewAccessToken(w http.ResponseWriter, r *http.Request) {
+	req := new(renewAccessTokenRequest)
+	decoder := json.NewDecoder(r.Body)
+	encoder := json.NewEncoder(w)
+
+	if err := decoder.Decode(req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse(InvalidJsonMsg))
+		return
+	}
+
+	// Verify Refresh Token (Crypto check)
+	refreshPayload, err := server.tokenMaker.Verify(req.RefreshToken)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = encoder.Encode(errorResponse("Invalid or expired refresh token"))
+		return
+	}
+
+	// Find Session in DB
+	session, err := server.store.GetSession(r.Context(), refreshPayload.ID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			_ = encoder.Encode(errorResponse("Session not found"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	// -- Security Checks --
+
+	// Check if session is blocked
+	if session.IsBlocked {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = encoder.Encode(errorResponse("Blocked session"))
+		return
+	}
+
+	// Check if user matches
+	if session.UserID != refreshPayload.UserID {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = encoder.Encode(errorResponse("Incorrect session user"))
+		return
+	}
+
+	// Check if token matches
+	if session.RefreshToken != req.RefreshToken {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = encoder.Encode(errorResponse("Mismatched session token"))
+		return
+	}
+
+	// Check if session is expired
+	if time.Now().After(session.ExpiresAt.Time) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = encoder.Encode(errorResponse("Expired session"))
+		return
+	}
+
+	// Generate New Access Token
+	accessToken, accessPayload, err := server.tokenMaker.Create(
+		refreshPayload.UserID,
+		server.config.AccessTokenDuration,
+	)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	res := renewAccessTokenResponse{
+		AccessToken:          accessToken,
+		AccessTokenExpiresAt: accessPayload.ExpiredAt,
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = encoder.Encode(res)
+}
+
+func (server *Server) revokeSession(w http.ResponseWriter, r *http.Request) {
+	req := new(revokeSessionRequest)
+	decoder := json.NewDecoder(r.Body)
+	encoder := json.NewEncoder(w)
+
+	if err := decoder.Decode(req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse(InvalidJsonMsg))
+		return
+	}
+
+	// Block Session in DB
+	if err := server.store.BlockSession(r.Context(), req.ID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			_ = encoder.Encode(errorResponse("Session not found"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
