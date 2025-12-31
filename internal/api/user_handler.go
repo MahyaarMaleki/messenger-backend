@@ -8,7 +8,6 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
 	"github.com/mahyaarmaleki/messenger-backend/internal/util"
@@ -28,17 +27,7 @@ func (server *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate content
-	if err := server.validator.Struct(req); err != nil {
-		var valErrors validator.ValidationErrors
-		if errors.As(err, &valErrors) {
-			out := make(map[string]string)
-			for _, fe := range valErrors {
-				out[fe.Field()] = msgForTag(fe)
-			}
-		}
-
-		w.WriteHeader(http.StatusBadRequest)
-		_ = encoder.Encode(validationErrorResponse(err))
+	if !server.validateRequest(w, req, encoder) {
 		return
 	}
 
@@ -169,13 +158,19 @@ func (server *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	encoder := json.NewEncoder(w)
 
+	// Decode JSON
 	if err := decoder.Decode(req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = encoder.Encode(errorResponse(InvalidJsonMsg))
 		return
 	}
 
-	// Get auth token payload from Context
+	// Validate content
+	if !server.validateRequest(w, req, encoder) {
+		return
+	}
+
+	// Get auth token payload from request context
 	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
 
 	// Prepare DB params
@@ -208,4 +203,63 @@ func (server *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_ = encoder.Encode(newUserResponse(updatedUser))
+}
+
+func (server *Server) changePassword(w http.ResponseWriter, r *http.Request) {
+	req := new(changePasswordRequest)
+	decoder := json.NewDecoder(r.Body)
+	encoder := json.NewEncoder(w)
+
+	// Decode JSON
+	if err := decoder.Decode(req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse(InvalidJsonMsg))
+		return
+	}
+
+	// Validate content
+	if !server.validateRequest(w, req, encoder) {
+		return
+	}
+
+	// Get auth token payload from request context
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// Fetch user from DB
+	user, err := server.store.GetUserById(r.Context(), authPayload.UserID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	// Verify old password
+	if !util.ComparePassword(req.OldPassword, user.PasswordHash) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = encoder.Encode(errorResponse("Invalid old password"))
+		return
+	}
+
+	// Hash new password
+	newHash, err := util.HashPassword(req.NewPassword)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	arg := db.UpdatePasswordParams{
+		ID:           user.ID,
+		PasswordHash: newHash,
+	}
+
+	err = server.store.UpdatePassword(r.Context(), arg)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = encoder.Encode(map[string]string{"message": "Password updated successfully"})
 }

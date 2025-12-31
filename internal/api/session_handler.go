@@ -23,6 +23,10 @@ func (server *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !server.validateRequest(w, req, encoder) {
+		return
+	}
+
 	user, err := server.store.GetUserByUsername(r.Context(), req.Username)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -106,6 +110,10 @@ func (server *Server) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !server.validateRequest(w, req, encoder) {
+		return
+	}
+
 	// Verify Refresh Token (Crypto check)
 	refreshPayload, err := server.tokenMaker.Verify(req.RefreshToken)
 	if err != nil {
@@ -185,6 +193,10 @@ func (server *Server) revokeSession(w http.ResponseWriter, r *http.Request) {
 	if err := decoder.Decode(req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = encoder.Encode(errorResponse(InvalidJsonMsg))
+		return
+	}
+
+	if !server.validateRequest(w, req, encoder) {
 		return
 	}
 
