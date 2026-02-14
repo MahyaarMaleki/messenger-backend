@@ -55,6 +55,16 @@ func (server *Server) setupRouter() {
 				r.Post("/revoke", server.revokeSession) // Logout
 			})
 		})
+
+		// Chat routes
+		r.Route("/chats", func(r chi.Router) {
+			// Protected routes
+			r.Group(func(r chi.Router) {
+				r.Use(server.AuthMiddleware)
+
+				r.Post("/", server.createConversation)
+			})
+		})
 	})
 
 	server.router = r
