@@ -24,6 +24,10 @@ INSERT INTO messages (
     $1, $2, $3
 ) RETURNING *;
 
+-- name: GetConversation :one
+SELECT * FROM conversations
+WHERE id = $1 LIMIT 1;
+
 -- name: GetConversationMessages :many
 -- GetConversationMessages Loads messages for a specific chat with pagination support
 SELECT

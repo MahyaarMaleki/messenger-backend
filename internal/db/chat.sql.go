@@ -120,6 +120,24 @@ func (q *Queries) FindExistingPrivateChat(ctx context.Context, arg FindExistingP
 	return id, err
 }
 
+const getConversation = `-- name: GetConversation :one
+SELECT id, name, type, created_at, last_message_at FROM conversations
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetConversation(ctx context.Context, id uuid.UUID) (Conversation, error) {
+	row := q.db.QueryRow(ctx, getConversation, id)
+	var i Conversation
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Type,
+		&i.CreatedAt,
+		&i.LastMessageAt,
+	)
+	return i, err
+}
+
 const getConversationMessages = `-- name: GetConversationMessages :many
 SELECT
     id,
