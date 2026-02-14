@@ -41,6 +41,25 @@ type (
 		NewPassword string `json:"newPassword" validate:"required,min=8,max=32"`
 	}
 
+	createConversationRequest struct {
+		// 'private', 'group', or 'channel'
+		Type string `json:"type" validate:"required,oneof=private group channel"`
+
+		// Required if type is 'private'
+		TargetUsername *string `json:"targetUsername" validate:"required_if=Type private"`
+
+		// Required if type is 'group' or 'channel'
+		Name *string `json:"name" validate:"required_if=Type group,required_if=Type channel,omitempty,min=3"`
+	}
+
+	conversationResponse struct {
+		ID            uuid.UUID `json:"id"`
+		Name          string    `json:"name"`
+		Type          string    `json:"type"`
+		LastMessageAt time.Time `json:"lastMessageAt"`
+		CreatedAt     time.Time `json:"createdAt"`
+	}
+
 	renewAccessTokenResponse struct {
 		AccessToken          string    `json:"accessToken"`
 		AccessTokenExpiresAt time.Time `json:"accessTokenExpiresAt"`
@@ -106,5 +125,15 @@ func newUserProfileResponse(user db.User) userProfileResponse {
 		LastName:  user.LastName,
 		Bio:       user.Bio.String,
 		AvatarUrl: user.AvatarUrl.String,
+	}
+}
+
+func newConversationResponse(c db.Conversation) conversationResponse {
+	return conversationResponse{
+		ID:            c.ID,
+		Name:          c.Name.String,
+		Type:          c.Type,
+		LastMessageAt: c.LastMessageAt.Time,
+		CreatedAt:     c.CreatedAt.Time,
 	}
 }
