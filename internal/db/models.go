@@ -33,6 +33,15 @@ type Message struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updatedAt"`
 }
 
+type MessageAttachment struct {
+	ID        uuid.UUID          `json:"id"`
+	MessageID uuid.UUID          `json:"messageId"`
+	FileUrl   string             `json:"fileUrl"`
+	FileType  string             `json:"fileType"`
+	FileName  string             `json:"fileName"`
+	CreatedAt pgtype.Timestamptz `json:"createdAt"`
+}
+
 type Session struct {
 	ID           uuid.UUID          `json:"id"`
 	UserID       uuid.UUID          `json:"userId"`
