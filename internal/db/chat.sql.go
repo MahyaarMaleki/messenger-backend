@@ -40,6 +40,34 @@ func (q *Queries) AddParticipant(ctx context.Context, arg AddParticipantParams) 
 	return i, err
 }
 
+const createAttachment = `-- name: CreateAttachment :exec
+INSERT INTO message_attachments (
+    message_id,
+    file_url,
+    file_type,
+    file_name
+) VALUES (
+    $1, $2, $3, $4
+)
+`
+
+type CreateAttachmentParams struct {
+	MessageID uuid.UUID `json:"messageId"`
+	FileUrl   string    `json:"fileUrl"`
+	FileType  string    `json:"fileType"`
+	FileName  string    `json:"fileName"`
+}
+
+func (q *Queries) CreateAttachment(ctx context.Context, arg CreateAttachmentParams) error {
+	_, err := q.db.Exec(ctx, createAttachment,
+		arg.MessageID,
+		arg.FileUrl,
+		arg.FileType,
+		arg.FileName,
+	)
+	return err
+}
+
 const createConversation = `-- name: CreateConversation :one
 INSERT INTO conversations (
     name,
@@ -140,17 +168,29 @@ func (q *Queries) GetConversation(ctx context.Context, id uuid.UUID) (Conversati
 
 const getConversationMessages = `-- name: GetConversationMessages :many
 SELECT
-    id,
-    conversation_id,
-    sender_id,
-    content,
-    created_at,
-    updated_at
-FROM messages
-WHERE conversation_id = $1
-ORDER BY created_at DESC
-LIMIT $2
-OFFSET $3
+    m.id,
+    m.conversation_id,
+    m.sender_id,
+    m.content,
+    m.created_at,
+    m.updated_at,
+    COALESCE(
+        json_agg(
+        json_build_object(
+            'id', ma.id,
+            'url', ma.file_url,
+            'type', ma.file_type,
+            'name', ma.file_name
+        )
+    ) FILTER (WHERE ma.id IS NOT NULL),
+        '[]'
+    )::jsonb AS attachments
+FROM messages m
+LEFT JOIN message_attachments ma ON m.id = ma.message_id
+WHERE m.conversation_id = $1
+GROUP BY m.id, m.created_at
+ORDER BY m.created_at DESC
+LIMIT $2 OFFSET $3
 `
 
 type GetConversationMessagesParams struct {
@@ -159,16 +199,26 @@ type GetConversationMessagesParams struct {
 	Offset         int32     `json:"offset"`
 }
 
+type GetConversationMessagesRow struct {
+	ID             uuid.UUID          `json:"id"`
+	ConversationID uuid.UUID          `json:"conversationId"`
+	SenderID       uuid.UUID          `json:"senderId"`
+	Content        string             `json:"content"`
+	CreatedAt      pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt      pgtype.Timestamptz `json:"updatedAt"`
+	Attachments    []byte             `json:"attachments"`
+}
+
 // GetConversationMessages Loads messages for a specific chat with pagination support
-func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversationMessagesParams) ([]Message, error) {
+func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversationMessagesParams) ([]GetConversationMessagesRow, error) {
 	rows, err := q.db.Query(ctx, getConversationMessages, arg.ConversationID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Message
+	var items []GetConversationMessagesRow
 	for rows.Next() {
-		var i Message
+		var i GetConversationMessagesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ConversationID,
@@ -176,6 +226,7 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 			&i.Content,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Attachments,
 		); err != nil {
 			return nil, err
 		}
