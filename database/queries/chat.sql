@@ -28,20 +28,42 @@ INSERT INTO messages (
 SELECT * FROM conversations
 WHERE id = $1 LIMIT 1;
 
+-- name: CreateAttachment :exec
+INSERT INTO message_attachments (
+    message_id,
+    file_url,
+    file_type,
+    file_name
+) VALUES (
+    $1, $2, $3, $4
+);
+
 -- name: GetConversationMessages :many
 -- GetConversationMessages Loads messages for a specific chat with pagination support
 SELECT
-    id,
-    conversation_id,
-    sender_id,
-    content,
-    created_at,
-    updated_at
-FROM messages
-WHERE conversation_id = $1
-ORDER BY created_at DESC
-LIMIT $2
-OFFSET $3;
+    m.id,
+    m.conversation_id,
+    m.sender_id,
+    m.content,
+    m.created_at,
+    m.updated_at,
+    COALESCE(
+        json_agg(
+        json_build_object(
+            'id', ma.id,
+            'url', ma.file_url,
+            'type', ma.file_type,
+            'name', ma.file_name
+        )
+    ) FILTER (WHERE ma.id IS NOT NULL),
+        '[]'
+    )::jsonb AS attachments
+FROM messages m
+LEFT JOIN message_attachments ma ON m.id = ma.message_id
+WHERE m.conversation_id = $1
+GROUP BY m.id, m.created_at
+ORDER BY m.created_at DESC
+LIMIT $2 OFFSET $3;
 
 -- name: GetUserConversations :many
 -- GetUserConversations lists all the conversations a user is part of
