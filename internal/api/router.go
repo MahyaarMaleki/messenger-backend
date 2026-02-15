@@ -62,8 +62,21 @@ func (server *Server) setupRouter() {
 			r.Group(func(r chi.Router) {
 				r.Use(server.AuthMiddleware)
 
-				r.Post("/", server.createConversation)
+				r.Post("/", server.createConversation)  // Start new chat
+				r.Get("/", server.getUserConversations) // Inbox
+
+				// Sub-routes for a specific chat
+				r.Route("/{id}", func(r chi.Router) {
+					r.Post("/messages", server.createMessage) // Send message
+					r.Get("/messages", server.getMessages)    // Get history
+				})
 			})
+		})
+
+		// Upload route
+		r.Group(func(r chi.Router) {
+			r.Use(server.AuthMiddleware)
+			r.Post("/upload", server.uploadFile)
 		})
 	})
 
