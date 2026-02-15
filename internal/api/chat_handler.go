@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -488,4 +489,245 @@ func (server *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Message deleted successfully"})
+}
+
+func (server *Server) addParticipant(w http.ResponseWriter, r *http.Request) {
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	req := new(addParticipantRequest)
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse(InvalidJsonMsg))
+		return
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// A. Check My Role
+	myself, err := server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	})
+	if err != nil || myself.Role != "admin" {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(errorResponse("Only admins can add members"))
+		return
+	}
+
+	// B. Fetch Conversation to check Type (Group vs Channel)
+	conversation, err := server.store.GetConversation(r.Context(), conversationID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	//  C. Determine Role based on Type
+	targetRole := "member" // Default for groups
+	if conversation.Type == "channel" {
+		targetRole = "observer" // Read-only for channels
+	}
+
+	// D. Find Target User
+	user, err := server.store.GetUserByUsername(r.Context(), req.Username)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(errorResponse("User not found"))
+		return
+	}
+
+	// E. Add them with the correct role
+	_, err = server.store.AddParticipant(r.Context(), db.AddParticipantParams{
+		ConversationID: conversationID,
+		UserID:         user.ID,
+		Role:           targetRole,
+	})
+	if err != nil {
+		if errorCode(err) == UniqueViolation {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(errorResponse("User already in group"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": fmt.Sprintf("User added as %s", targetRole),
+	})
+}
+
+// joinChannel allows a user to subscribe to a public channel
+func (server *Server) joinChannel(w http.ResponseWriter, r *http.Request) {
+	// 1. Parse Conversation ID
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// 2. Fetch Conversation to check Type
+	conversation, err := server.store.GetConversation(r.Context(), conversationID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(errorResponse("Channel not found"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	// 3. Strict Check: Only Channels allow public joining
+	// (We block users from joining private Groups or 1-on-1 chats this way)
+	if conversation.Type != "channel" {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(errorResponse("This conversation is invite-only"))
+		return
+	}
+
+	// 4. Add Self as Observer
+	_, err = server.store.AddParticipant(r.Context(), db.AddParticipantParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+		Role:           "observer", // Channels are read-only for subscribers
+	})
+
+	if err != nil {
+		// Handle "Already Joined" case gracefully
+		if errorCode(err) == UniqueViolation {
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(errorResponse("You are already subscribed to this channel"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Subscribed successfully"})
+}
+
+func (server *Server) leaveConversation(w http.ResponseWriter, r *http.Request) {
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// Execute Delete (If user isn't in chat, this is a no-op, which is fine)
+	err = server.store.RemoveParticipant(r.Context(), db.RemoveParticipantParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Left conversation successfully"})
+}
+
+// 2. Kick Participant (Admin Only)
+func (server *Server) removeParticipant(w http.ResponseWriter, r *http.Request) {
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	targetUserID, err := uuid.Parse(chi.URLParam(r, "userId"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid user ID"))
+		return
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// A. Check My Role
+	myself, err := server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	})
+	if err != nil || myself.Role != "admin" {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(errorResponse("Only admins can remove members"))
+		return
+	}
+
+	// B. Remove Target
+	err = server.store.RemoveParticipant(r.Context(), db.RemoveParticipantParams{
+		ConversationID: conversationID,
+		UserID:         targetUserID,
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "User removed"})
+}
+
+func (server *Server) updateConversation(w http.ResponseWriter, r *http.Request) {
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	req := new(updateConversationRequest)
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse(InvalidJsonMsg))
+		return
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// A. Check My Role
+	myself, err := server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	})
+	if err != nil || myself.Role != "admin" {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(errorResponse("Only admins can update group or channel info"))
+		return
+	}
+
+	// B. Update
+	updatedChat, err := server.store.UpdateConversation(r.Context(), db.UpdateConversationParams{
+		ID:   conversationID,
+		Name: pgtype.Text{String: req.Name, Valid: true},
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(newConversationResponse(updatedChat, nil))
 }
