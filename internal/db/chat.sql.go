@@ -269,24 +269,41 @@ SELECT
     c.created_at,
     c.last_message_at,
     cp.role,
-    cp.joined_at
+    cp.joined_at,
+    -- Fetch the "Other User" info (Nullable, only for private chats)
+    u.username AS other_username,
+    u.first_name AS other_first_name,
+    u.last_name AS other_last_name,
+    u.bio AS other_bio,
+    u.avatar_url AS other_avatar_url
 FROM conversations c
 JOIN conversation_participants cp ON c.id = cp.conversation_id
+LEFT JOIN conversation_participants cp2
+    ON c.id = cp2.conversation_id
+    AND cp2.user_id != $1
+    AND c.type = 'private'
+LEFT JOIN users u ON cp2.user_id = u.id
 WHERE cp.user_id = $1
 ORDER BY c.last_message_at DESC
 `
 
 type GetUserConversationsRow struct {
-	ID            uuid.UUID          `json:"id"`
-	Name          pgtype.Text        `json:"name"`
-	Type          string             `json:"type"`
-	CreatedAt     pgtype.Timestamptz `json:"createdAt"`
-	LastMessageAt pgtype.Timestamptz `json:"lastMessageAt"`
-	Role          string             `json:"role"`
-	JoinedAt      pgtype.Timestamptz `json:"joinedAt"`
+	ID             uuid.UUID          `json:"id"`
+	Name           pgtype.Text        `json:"name"`
+	Type           string             `json:"type"`
+	CreatedAt      pgtype.Timestamptz `json:"createdAt"`
+	LastMessageAt  pgtype.Timestamptz `json:"lastMessageAt"`
+	Role           string             `json:"role"`
+	JoinedAt       pgtype.Timestamptz `json:"joinedAt"`
+	OtherUsername  pgtype.Text        `json:"otherUsername"`
+	OtherFirstName pgtype.Text        `json:"otherFirstName"`
+	OtherLastName  pgtype.Text        `json:"otherLastName"`
+	OtherBio       pgtype.Text        `json:"otherBio"`
+	OtherAvatarUrl pgtype.Text        `json:"otherAvatarUrl"`
 }
 
 // GetUserConversations lists all the conversations a user is part of
+// Logic: If type is 'private', find the participant who is NOT me ($1)
 func (q *Queries) GetUserConversations(ctx context.Context, userID uuid.UUID) ([]GetUserConversationsRow, error) {
 	rows, err := q.db.Query(ctx, getUserConversations, userID)
 	if err != nil {
@@ -304,6 +321,11 @@ func (q *Queries) GetUserConversations(ctx context.Context, userID uuid.UUID) ([
 			&i.LastMessageAt,
 			&i.Role,
 			&i.JoinedAt,
+			&i.OtherUsername,
+			&i.OtherFirstName,
+			&i.OtherLastName,
+			&i.OtherBio,
+			&i.OtherAvatarUrl,
 		); err != nil {
 			return nil, err
 		}

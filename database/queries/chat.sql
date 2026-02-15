@@ -74,9 +74,21 @@ SELECT
     c.created_at,
     c.last_message_at,
     cp.role,
-    cp.joined_at
+    cp.joined_at,
+    -- Fetch the "Other User" info (Nullable, only for private chats)
+    u.username AS other_username,
+    u.first_name AS other_first_name,
+    u.last_name AS other_last_name,
+    u.bio AS other_bio,
+    u.avatar_url AS other_avatar_url
 FROM conversations c
 JOIN conversation_participants cp ON c.id = cp.conversation_id
+-- Logic: If type is 'private', find the participant who is NOT me ($1)
+LEFT JOIN conversation_participants cp2
+    ON c.id = cp2.conversation_id
+    AND cp2.user_id != $1
+    AND c.type = 'private'
+LEFT JOIN users u ON cp2.user_id = u.id
 WHERE cp.user_id = $1
 ORDER BY c.last_message_at DESC;
 
