@@ -62,8 +62,10 @@ func (server *Server) setupRouter() {
 			r.Group(func(r chi.Router) {
 				r.Use(server.AuthMiddleware)
 
-				r.Post("/", server.createConversation)  // Start new chat
-				r.Get("/", server.getUserConversations) // Inbox
+				r.Post("/", server.createConversation)       // Start new chat
+				r.Get("/", server.getUserConversations)      // Inbox
+				r.Put("/", server.updateConversation)        // Rename Group
+				r.Delete("/leave", server.leaveConversation) // Leave Group
 
 				// Sub-routes for a specific chat
 				r.Route("/{id}", func(r chi.Router) {
@@ -71,6 +73,8 @@ func (server *Server) setupRouter() {
 					r.Get("/messages", server.getMessages)                  // Get history
 					r.Put("/messages/{messageId}", server.updateMessage)    // Update message
 					r.Delete("/messages/{messageId}", server.deleteMessage) // Delete message
+
+					r.Post("/join", server.joinChannel)
 				})
 			})
 		})
