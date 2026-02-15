@@ -366,6 +366,93 @@ func (q *Queries) GetUserConversations(ctx context.Context, userID uuid.UUID) ([
 	return items, nil
 }
 
+const listParticipants = `-- name: ListParticipants :many
+SELECT
+    u.username,
+    u.avatar_url,
+    cp.user_id,
+    cp.role,
+    cp.joined_at
+FROM conversation_participants cp
+JOIN users u ON cp.user_id = u.id
+WHERE cp.conversation_id = $1
+ORDER BY cp.role, u.username
+`
+
+type ListParticipantsRow struct {
+	Username  string             `json:"username"`
+	AvatarUrl pgtype.Text        `json:"avatarUrl"`
+	UserID    uuid.UUID          `json:"userId"`
+	Role      string             `json:"role"`
+	JoinedAt  pgtype.Timestamptz `json:"joinedAt"`
+}
+
+func (q *Queries) ListParticipants(ctx context.Context, conversationID uuid.UUID) ([]ListParticipantsRow, error) {
+	rows, err := q.db.Query(ctx, listParticipants, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListParticipantsRow
+	for rows.Next() {
+		var i ListParticipantsRow
+		if err := rows.Scan(
+			&i.Username,
+			&i.AvatarUrl,
+			&i.UserID,
+			&i.Role,
+			&i.JoinedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeParticipant = `-- name: RemoveParticipant :exec
+DELETE FROM conversation_participants
+WHERE conversation_id = $1 AND user_id = $2
+`
+
+type RemoveParticipantParams struct {
+	ConversationID uuid.UUID `json:"conversationId"`
+	UserID         uuid.UUID `json:"userId"`
+}
+
+func (q *Queries) RemoveParticipant(ctx context.Context, arg RemoveParticipantParams) error {
+	_, err := q.db.Exec(ctx, removeParticipant, arg.ConversationID, arg.UserID)
+	return err
+}
+
+const updateConversation = `-- name: UpdateConversation :one
+UPDATE conversations
+SET name = $2
+WHERE id = $1
+RETURNING id, name, type, created_at, last_message_at
+`
+
+type UpdateConversationParams struct {
+	ID   uuid.UUID   `json:"id"`
+	Name pgtype.Text `json:"name"`
+}
+
+func (q *Queries) UpdateConversation(ctx context.Context, arg UpdateConversationParams) (Conversation, error) {
+	row := q.db.QueryRow(ctx, updateConversation, arg.ID, arg.Name)
+	var i Conversation
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Type,
+		&i.CreatedAt,
+		&i.LastMessageAt,
+	)
+	return i, err
+}
+
 const updateConversationLastMessageAt = `-- name: UpdateConversationLastMessageAt :exec
 UPDATE conversations
 SET last_message_at = $2

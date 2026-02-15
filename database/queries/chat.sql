@@ -125,3 +125,25 @@ RETURNING *;
 -- name: DeleteMessage :exec
 DELETE FROM messages
 WHERE id = $1;
+
+-- name: RemoveParticipant :exec
+DELETE FROM conversation_participants
+WHERE conversation_id = $1 AND user_id = $2;
+
+-- name: UpdateConversation :one
+UPDATE conversations
+SET name = $2
+WHERE id = $1
+RETURNING *;
+
+-- name: ListParticipants :many
+SELECT
+    u.username,
+    u.avatar_url,
+    cp.user_id,
+    cp.role,
+    cp.joined_at
+FROM conversation_participants cp
+JOIN users u ON cp.user_id = u.id
+WHERE cp.conversation_id = $1
+ORDER BY cp.role, u.username;
