@@ -52,6 +52,27 @@ type (
 		Name *string `json:"name" validate:"required_if=Type group,required_if=Type channel,omitempty,min=3"`
 	}
 
+	attachmentDTO struct {
+		URL  string `json:"url" validate:"required"`
+		Type string `json:"type" validate:"required"`
+		Name string `json:"name" validate:"required"`
+	}
+
+	createMessageRequest struct {
+		Content     string          `json:"content" validate:"required"`
+		Attachments []attachmentDTO `json:"attachments" validate:"omitempty,dive"`
+	}
+
+	messageResponse struct {
+		ID             uuid.UUID       `json:"id"`
+		ConversationID uuid.UUID       `json:"conversationId"`
+		SenderID       uuid.UUID       `json:"senderId"`
+		Content        string          `json:"content"`
+		Attachments    []attachmentDTO `json:"attachments"`
+		CreatedAt      time.Time       `json:"createdAt"`
+		UpdatedAt      time.Time       `json:"updatedAt"`
+	}
+
 	conversationResponse struct {
 		ID            uuid.UUID `json:"id"`
 		Name          string    `json:"name"`
@@ -135,5 +156,21 @@ func newConversationResponse(c db.Conversation) conversationResponse {
 		Type:          c.Type,
 		LastMessageAt: c.LastMessageAt.Time,
 		CreatedAt:     c.CreatedAt.Time,
+	}
+}
+
+func newMessageResponse(msg db.Message, attachments []attachmentDTO) messageResponse {
+	if attachments == nil {
+		attachments = []attachmentDTO{}
+	}
+
+	return messageResponse{
+		ID:             msg.ID,
+		ConversationID: msg.ConversationID,
+		SenderID:       msg.SenderID,
+		Content:        msg.Content,
+		Attachments:    attachments,
+		CreatedAt:      msg.CreatedAt.Time,
+		UpdatedAt:      msg.UpdatedAt.Time,
 	}
 }
