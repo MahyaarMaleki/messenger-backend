@@ -31,6 +31,7 @@ func (server *Server) createConversation(w http.ResponseWriter, r *http.Request)
 
 	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
 	var finalConversation db.Conversation
+	var otherParticipant *userProfileResponse // Only set for private chats
 
 	// Case 1: Private Chat (1-on-1)
 	if req.Type == "private" {
@@ -45,6 +46,9 @@ func (server *Server) createConversation(w http.ResponseWriter, r *http.Request)
 			_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
 			return
 		}
+
+		profile := newUserProfileResponse(targetUser)
+		otherParticipant = &profile
 
 		// Check if chat already exists
 		existingID, err := server.store.FindExistingPrivateChat(r.Context(), db.FindExistingPrivateChatParams{
@@ -62,7 +66,7 @@ func (server *Server) createConversation(w http.ResponseWriter, r *http.Request)
 			}
 
 			w.WriteHeader(http.StatusOK)
-			_ = encoder.Encode(newConversationResponse(finalConversation))
+			_ = encoder.Encode(newConversationResponse(finalConversation, otherParticipant))
 			return
 		}
 
@@ -132,7 +136,7 @@ func (server *Server) createConversation(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusOK)
-	_ = encoder.Encode(newConversationResponse(finalConversation))
+	_ = encoder.Encode(newConversationResponse(finalConversation, otherParticipant))
 }
 
 // getUserConversations returns the list of chats for the logged-in user
@@ -140,27 +144,38 @@ func (server *Server) getUserConversations(w http.ResponseWriter, r *http.Reques
 	encoder := json.NewEncoder(w)
 	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
 
-	// Fetch from DB (already sorted by last_message_at DESC in the query)
-	conversations, err := server.store.GetUserConversations(r.Context(), authPayload.UserID)
+	// Fetch from DB
+	rows, err := server.store.GetUserConversations(r.Context(), authPayload.UserID)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
 		return
 	}
 
-	// Map to Response
-	// Note: The query returns a custom Row struct, not db.Conversation,
-	// so we map it manually or create a helper if reused often.
-	res := make([]conversationResponse, len(conversations))
-	for i, c := range conversations {
-		res[i] = conversationResponse{
-			ID:            c.ID,
-			Name:          c.Name.String,
-			Type:          c.Type,
-			LastMessageAt: c.LastMessageAt.Time,
-			CreatedAt:     c.CreatedAt.Time,
-			// You could also return c.Role or c.JoinedAt if you update the DTO
+	res := make([]conversationResponse, len(rows))
+	for i, row := range rows {
+		// Base Conversation Data
+		c := conversationResponse{
+			ID:            row.ID,
+			Name:          row.Name.String, // "Dev Team" or ""
+			Type:          row.Type,
+			LastMessageAt: row.LastMessageAt.Time,
+			CreatedAt:     row.CreatedAt.Time,
 		}
+
+		// Logic: If it's a private chat, populate 'OtherParticipant'
+		// We check if OtherUsername is valid (not null)
+		if row.Type == "private" && row.OtherUsername.Valid {
+			c.OtherParticipant = &userProfileResponse{
+				Username:  row.OtherUsername.String,
+				FirstName: row.OtherFirstName.String,
+				LastName:  row.OtherLastName.String,
+				Bio:       row.OtherBio.String,
+				AvatarUrl: row.OtherAvatarUrl.String,
+			}
+		}
+
+		res[i] = c
 	}
 
 	w.WriteHeader(http.StatusOK)
