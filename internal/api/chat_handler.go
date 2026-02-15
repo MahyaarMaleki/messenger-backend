@@ -362,3 +362,130 @@ func (server *Server) getMessages(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_ = encoder.Encode(res)
 }
+
+func (server *Server) updateMessage(w http.ResponseWriter, r *http.Request) {
+	// 1. Parse IDs
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	messageID, err := uuid.Parse(chi.URLParam(r, "messageId"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid message ID"))
+		return
+	}
+
+	// 2. Parse Body
+	req := new(updateMessageRequest)
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse(InvalidJsonMsg))
+		return
+	}
+
+	// 3. Get Existing Message
+	message, err := server.store.GetMessage(r.Context(), messageID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(errorResponse("Message not found"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	// 4. Security Checks
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// Check A: Does this message belong to this chat?
+	if message.ConversationID != conversationID {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Message does not belong to this conversation"))
+		return
+	}
+
+	// Check B: Are you the sender?
+	if message.SenderID != authPayload.UserID {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(errorResponse("You can only edit your own messages"))
+		return
+	}
+
+	// 5. Update
+	updatedMessage, err := server.store.UpdateMessage(r.Context(), db.UpdateMessageParams{
+		ID:      messageID,
+		Content: req.Content,
+	})
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	// For simplicity, we return the message without attachments here
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(newMessageResponse(updatedMessage, nil))
+}
+
+func (server *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
+	// 1. Parse IDs
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	messageID, err := uuid.Parse(chi.URLParam(r, "messageId"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid message ID"))
+		return
+	}
+
+	// 2. Get Existing Message
+	message, err := server.store.GetMessage(r.Context(), messageID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(errorResponse("Message not found"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	// 3. Security Checks
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	if message.ConversationID != conversationID {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Message does not belong to this conversation"))
+		return
+	}
+
+	if message.SenderID != authPayload.UserID {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(errorResponse("You can only delete your own messages"))
+		return
+	}
+
+	// 4. Delete
+	err = server.store.DeleteMessage(r.Context(), messageID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Message deleted successfully"})
+}

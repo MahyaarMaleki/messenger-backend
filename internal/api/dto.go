@@ -63,6 +63,10 @@ type (
 		Attachments []attachmentDTO `json:"attachments" validate:"omitempty,dive"`
 	}
 
+	updateMessageRequest struct {
+		Content string `json:"content" validate:"required"`
+	}
+
 	messageResponse struct {
 		ID             uuid.UUID       `json:"id"`
 		ConversationID uuid.UUID       `json:"conversationId"`

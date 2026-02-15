@@ -67,8 +67,10 @@ func (server *Server) setupRouter() {
 
 				// Sub-routes for a specific chat
 				r.Route("/{id}", func(r chi.Router) {
-					r.Post("/messages", server.createMessage) // Send message
-					r.Get("/messages", server.getMessages)    // Get history
+					r.Post("/messages", server.createMessage)               // Send message
+					r.Get("/messages", server.getMessages)                  // Get history
+					r.Put("/messages/{messageId}", server.updateMessage)    // Update message
+					r.Delete("/messages/{messageId}", server.deleteMessage) // Delete message
 				})
 			})
 		})
