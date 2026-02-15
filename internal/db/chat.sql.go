@@ -125,6 +125,16 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 	return i, err
 }
 
+const deleteMessage = `-- name: DeleteMessage :exec
+DELETE FROM messages
+WHERE id = $1
+`
+
+func (q *Queries) DeleteMessage(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteMessage, id)
+	return err
+}
+
 const findExistingPrivateChat = `-- name: FindExistingPrivateChat :one
 SELECT c.id
 FROM conversations c
@@ -236,6 +246,25 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 		return nil, err
 	}
 	return items, nil
+}
+
+const getMessage = `-- name: GetMessage :one
+SELECT id, conversation_id, sender_id, content, created_at, updated_at FROM messages
+WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error) {
+	row := q.db.QueryRow(ctx, getMessage, id)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.ConversationID,
+		&i.SenderID,
+		&i.Content,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getParticipant = `-- name: GetParticipant :one
@@ -351,4 +380,30 @@ type UpdateConversationLastMessageAtParams struct {
 func (q *Queries) UpdateConversationLastMessageAt(ctx context.Context, arg UpdateConversationLastMessageAtParams) error {
 	_, err := q.db.Exec(ctx, updateConversationLastMessageAt, arg.ID, arg.LastMessageAt)
 	return err
+}
+
+const updateMessage = `-- name: UpdateMessage :one
+UPDATE messages
+SET content = $2, updated_at = now()
+WHERE id = $1
+RETURNING id, conversation_id, sender_id, content, created_at, updated_at
+`
+
+type UpdateMessageParams struct {
+	ID      uuid.UUID `json:"id"`
+	Content string    `json:"content"`
+}
+
+func (q *Queries) UpdateMessage(ctx context.Context, arg UpdateMessageParams) (Message, error) {
+	row := q.db.QueryRow(ctx, updateMessage, arg.ID, arg.Content)
+	var i Message
+	err := row.Scan(
+		&i.ID,
+		&i.ConversationID,
+		&i.SenderID,
+		&i.Content,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

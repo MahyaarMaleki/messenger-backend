@@ -111,3 +111,17 @@ LIMIT 1;
 UPDATE conversations
 SET last_message_at = $2
 WHERE id = $1;
+
+-- name: GetMessage :one
+SELECT * FROM messages
+WHERE id = $1 LIMIT 1;
+
+-- name: UpdateMessage :one
+UPDATE messages
+SET content = $2, updated_at = now()
+WHERE id = $1
+RETURNING *;
+
+-- name: DeleteMessage :exec
+DELETE FROM messages
+WHERE id = $1;
