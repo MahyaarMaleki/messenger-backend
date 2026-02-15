@@ -67,6 +67,14 @@ type (
 		Content string `json:"content" validate:"required"`
 	}
 
+	addParticipantRequest struct {
+		Username string `json:"username" validate:"required"`
+	}
+
+	updateConversationRequest struct {
+		Name string `json:"name" validate:"required,min=3"`
+	}
+
 	messageResponse struct {
 		ID             uuid.UUID       `json:"id"`
 		ConversationID uuid.UUID       `json:"conversationId"`
