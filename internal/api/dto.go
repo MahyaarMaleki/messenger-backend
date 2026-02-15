@@ -74,11 +74,12 @@ type (
 	}
 
 	conversationResponse struct {
-		ID            uuid.UUID `json:"id"`
-		Name          string    `json:"name"`
-		Type          string    `json:"type"`
-		LastMessageAt time.Time `json:"lastMessageAt"`
-		CreatedAt     time.Time `json:"createdAt"`
+		ID               uuid.UUID            `json:"id"`
+		Name             string               `json:"name"`
+		Type             string               `json:"type"`
+		LastMessageAt    time.Time            `json:"lastMessageAt"`
+		CreatedAt        time.Time            `json:"createdAt"`
+		OtherParticipant *userProfileResponse `json:"otherParticipant,omitempty"`
 	}
 
 	renewAccessTokenResponse struct {
@@ -149,13 +150,14 @@ func newUserProfileResponse(user db.User) userProfileResponse {
 	}
 }
 
-func newConversationResponse(c db.Conversation) conversationResponse {
+func newConversationResponse(c db.Conversation, otherUser *userProfileResponse) conversationResponse {
 	return conversationResponse{
-		ID:            c.ID,
-		Name:          c.Name.String,
-		Type:          c.Type,
-		LastMessageAt: c.LastMessageAt.Time,
-		CreatedAt:     c.CreatedAt.Time,
+		ID:               c.ID,
+		Name:             c.Name.String,
+		Type:             c.Type,
+		LastMessageAt:    c.LastMessageAt.Time,
+		CreatedAt:        c.CreatedAt.Time,
+		OtherParticipant: otherUser,
 	}
 }
 
