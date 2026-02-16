@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -276,8 +279,33 @@ func (server *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// --- Real-Time Broadcast Logic ---
+
+	// 1. Prepare the Response Payload
+	// We construct the data once, then send this exact JSON to everyone
+	response := newMessageResponse(message, req.Attachments)
+
+	// 2. Run Broadcast in Background
+	// Use a goroutine so that the API responds immediately to the sender
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Fetch all participants of this conversation
+		userIDs, err := server.store.GetConversationParticipants(ctx, conversationID)
+		if err != nil {
+			log.Printf("CRITICAL: Failed to broadcast message %s: %v", message.ID, err)
+			return
+		}
+
+		// Send to Hub
+		server.hub.Broadcast(userIDs, response)
+	}()
+
+	// 3. Respond to Client (Success)
+	// The client gets this 201 regardless of whether the broadcast worked or failed.
 	w.WriteHeader(http.StatusCreated)
-	_ = encoder.Encode(newMessageResponse(message, req.Attachments))
+	_ = encoder.Encode(response)
 }
 
 // getMessages loads history with pagination
