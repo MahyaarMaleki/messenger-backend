@@ -36,7 +36,6 @@ func (server *Server) setupRouter() {
 			// Protected routes
 			r.Group(func(r chi.Router) {
 				r.Use(server.AuthMiddleware)
-
 				r.Get("/me", server.getMe)
 				r.Put("/", server.updateUser)
 			})
@@ -44,38 +43,38 @@ func (server *Server) setupRouter() {
 
 		// Session routes
 		r.Route("/sessions", func(r chi.Router) {
-			// Public routes
 			r.Post("/", server.createSession)
 			r.Post("/renew", server.renewAccessToken)
 
-			// Protected routes
 			r.Group(func(r chi.Router) {
 				r.Use(server.AuthMiddleware)
-
 				r.Post("/revoke", server.revokeSession) // Logout
 			})
 		})
 
 		// Chat routes
 		r.Route("/chats", func(r chi.Router) {
-			// Protected routes
-			r.Group(func(r chi.Router) {
-				r.Use(server.AuthMiddleware)
+			r.Use(server.AuthMiddleware)
 
-				r.Post("/", server.createConversation)       // Start new chat
-				r.Get("/", server.getUserConversations)      // Inbox
-				r.Put("/", server.updateConversation)        // Rename Group
-				r.Delete("/leave", server.leaveConversation) // Leave Group
+			r.Post("/", server.createConversation)       // Start new chat
+			r.Get("/", server.getUserConversations)      // Inbox
+			r.Put("/", server.updateConversation)        // Rename Group
+			r.Delete("/leave", server.leaveConversation) // Leave Group
 
-				// Sub-routes for a specific chat
-				r.Route("/{id}", func(r chi.Router) {
-					r.Post("/messages", server.createMessage)               // Send message
-					r.Get("/messages", server.getMessages)                  // Get history
-					r.Put("/messages/{messageId}", server.updateMessage)    // Update message
-					r.Delete("/messages/{messageId}", server.deleteMessage) // Delete message
+			// Sub-routes for a specific chat
+			r.Route("/{id}", func(r chi.Router) {
+				// Group/Channel Management
+				r.Put("/", server.updateConversation)                        // Rename Group/Channel
+				r.Delete("/leave", server.leaveConversation)                 // Leave chat
+				r.Post("/join", server.joinChannel)                          // Join Channel
+				r.Post("/participants", server.addParticipant)               // Add Member
+				r.Delete("/participants/{userId}", server.removeParticipant) // Kick Member
 
-					r.Post("/join", server.joinChannel)
-				})
+				// Message Management
+				r.Post("/messages", server.createMessage)               // Send
+				r.Get("/messages", server.getMessages)                  // History
+				r.Put("/messages/{messageId}", server.updateMessage)    // Edit
+				r.Delete("/messages/{messageId}", server.deleteMessage) // Delete
 			})
 		})
 
@@ -83,6 +82,12 @@ func (server *Server) setupRouter() {
 		r.Group(func(r chi.Router) {
 			r.Use(server.AuthMiddleware)
 			r.Post("/upload", server.uploadFile)
+		})
+
+		// WebSocket Route
+		r.Group(func(r chi.Router) {
+			r.Use(server.AuthMiddleware)
+			r.Get("/ws", server.connectWebSocket)
 		})
 	})
 
