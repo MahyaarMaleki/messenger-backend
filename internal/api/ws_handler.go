@@ -7,11 +7,16 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/mahyaarmaleki/messenger-backend/internal/realtime"
-	"github.com/mahyaarmaleki/messenger-backend/internal/util"
 )
 
 func (server *Server) connectWebSocket(w http.ResponseWriter, r *http.Request) {
-	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+	token := r.URL.Query().Get("token")
+
+	authPayload, err := server.tokenMaker.Verify(token)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 
 	// Upgrade HTTP -> WebSocket
 	// In development, we allow all origins (*). In prod, restrict this.
