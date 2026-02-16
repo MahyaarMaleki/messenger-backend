@@ -97,6 +97,10 @@ SELECT * FROM conversation_participants
 WHERE conversation_id = $1 AND user_id = $2
 LIMIT 1;
 
+-- name: GetConversationParticipants :many
+SELECT user_id FROM conversation_participants
+WHERE conversation_id = $1;
+
 -- name: FindExistingPrivateChat :one
 SELECT c.id
 FROM conversations c

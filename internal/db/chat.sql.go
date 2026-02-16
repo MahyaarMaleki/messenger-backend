@@ -248,6 +248,31 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 	return items, nil
 }
 
+const getConversationParticipants = `-- name: GetConversationParticipants :many
+SELECT user_id FROM conversation_participants
+WHERE conversation_id = $1
+`
+
+func (q *Queries) GetConversationParticipants(ctx context.Context, conversationID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, getConversationParticipants, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getMessage = `-- name: GetMessage :one
 SELECT id, conversation_id, sender_id, content, created_at, updated_at FROM messages
 WHERE id = $1 LIMIT 1
