@@ -8,6 +8,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/mahyaarmaleki/messenger-backend/internal/config"
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
+	"github.com/mahyaarmaleki/messenger-backend/internal/realtime"
 	"github.com/mahyaarmaleki/messenger-backend/internal/util"
 )
 
@@ -17,6 +18,7 @@ type Server struct {
 	tokenMaker *util.PasetoMaker
 	router     *chi.Mux
 	validator  *validator.Validate
+	hub        *realtime.Hub
 }
 
 func NewServer(cfg *config.Config, store *db.Store) (*Server, error) {
@@ -30,8 +32,10 @@ func NewServer(cfg *config.Config, store *db.Store) (*Server, error) {
 		store:      store,
 		tokenMaker: tokenMaker,
 		validator:  validator.New(),
+		hub:        realtime.NewHub(),
 	}
 
+	go server.hub.Run()
 	server.setupRouter()
 
 	return server, nil
