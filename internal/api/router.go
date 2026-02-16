@@ -85,10 +85,7 @@ func (server *Server) setupRouter() {
 		})
 
 		// WebSocket Route
-		r.Group(func(r chi.Router) {
-			r.Use(server.AuthMiddleware)
-			r.Get("/ws", server.connectWebSocket)
-		})
+		r.Get("/ws", server.connectWebSocket)
 	})
 
 	server.router = r
