@@ -42,27 +42,34 @@ func (server *Server) connectWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Cleanup on Disconnect
 	defer server.hub.RemoveClient(client)
 
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	ctx := c.CloseRead(r.Context())
+
 	// Write Loop
 	// We listen for messages from the Hub and write them to the WebSocket
 	for {
 		select {
-		// A. Receive message from Hub
-		case message := <-client.Send:
-			// Create a context with a timeout so the writing doesn't hang forever
-			ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
-
-			// Use the library's BUILT-IN .Write() method directly
-			// websocket.MessageText indicates we are sending text (JSON), not binary blobs
-			err := c.Write(ctx, websocket.MessageText, message)
-
-			cancel() // Cancel the context to free resources
-
-			if err != nil {
-				return // Client disconnected or network error
-			}
-		// B. Context closed (server shutdown or client disconnected)
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
+
+		// Send Ping every 30s to keep the connection alive
+		case <-ticker.C:
+			pingCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+			err := c.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				return // Client disconnected
+			}
+
+		case message := <-client.Send:
+			writeCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+			err := c.Write(writeCtx, websocket.MessageText, message)
+			cancel()
+			if err != nil {
+				return
+			}
 		}
 	}
 }
