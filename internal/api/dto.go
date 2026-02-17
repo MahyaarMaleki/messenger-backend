@@ -124,15 +124,6 @@ type (
 		Bio       string `json:"bio"`
 		AvatarUrl string `json:"avatarUrl"`
 	}
-
-	loginUserResponse struct {
-		SessionID             uuid.UUID    `json:"sessionId"`
-		AccessToken           string       `json:"accessToken"`
-		AccessTokenExpiresAt  time.Time    `json:"accessTokenExpiresAt"`
-		RefreshToken          string       `json:"refreshToken"`
-		RefreshTokenExpiresAt time.Time    `json:"refreshTokenExpiresAt"`
-		User                  userResponse `json:"user"`
-	}
 )
 
 func newUserResponse(user db.User) userResponse {
