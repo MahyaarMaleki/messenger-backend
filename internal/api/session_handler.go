@@ -186,22 +186,11 @@ func (server *Server) renewAccessToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *Server) revokeSession(w http.ResponseWriter, r *http.Request) {
-	req := new(revokeSessionRequest)
-	decoder := json.NewDecoder(r.Body)
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
 	encoder := json.NewEncoder(w)
 
-	if err := decoder.Decode(req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = encoder.Encode(errorResponse(InvalidJsonMsg))
-		return
-	}
-
-	if !server.validateRequest(w, req, encoder) {
-		return
-	}
-
 	// Block Session in DB
-	if err := server.store.BlockSession(r.Context(), req.ID); err != nil {
+	if err := server.store.BlockSession(r.Context(), authPayload.ID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			w.WriteHeader(http.StatusNotFound)
 			_ = encoder.Encode(errorResponse("Session not found"))
@@ -213,5 +202,5 @@ func (server *Server) revokeSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	_ = encoder.Encode(map[string]string{"message": "Session revoked successfully"})
+	_ = encoder.Encode(map[string]string{"message": "Logged out successfully"})
 }

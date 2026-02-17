@@ -25,10 +25,6 @@ type (
 		RefreshToken string `json:"refreshToken" validate:"required"`
 	}
 
-	revokeSessionRequest struct {
-		ID uuid.UUID `json:"id" validate:"required"`
-	}
-
 	updateUserRequest struct {
 		FirstName *string `json:"firstName" validate:"omitempty,max=50"`
 		LastName  *string `json:"lastName" validate:"omitempty,max=50"`
