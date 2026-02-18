@@ -13,6 +13,7 @@ type Conversation struct {
 	ID            uuid.UUID          `json:"id"`
 	Name          pgtype.Text        `json:"name"`
 	Type          string             `json:"type"`
+	AvatarUrl     string             `json:"avatarUrl"`
 	CreatedAt     pgtype.Timestamptz `json:"createdAt"`
 	LastMessageAt pgtype.Timestamptz `json:"lastMessageAt"`
 }
@@ -22,6 +23,7 @@ type ConversationParticipant struct {
 	UserID         uuid.UUID          `json:"userId"`
 	JoinedAt       pgtype.Timestamptz `json:"joinedAt"`
 	Role           string             `json:"role"`
+	LastReadAt     pgtype.Timestamptz `json:"lastReadAt"`
 }
 
 type Message struct {

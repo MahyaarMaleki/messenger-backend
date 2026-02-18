@@ -1,9 +1,10 @@
 -- name: CreateConversation :one
 INSERT INTO conversations (
     name,
-    type
+    type,
+    avatar_url
 ) VALUES (
-    $1, $2
+    $1, $2, $3
 ) RETURNING *;
 
 -- name: AddParticipant :one
@@ -14,6 +15,11 @@ INSERT INTO conversation_participants (
 ) VALUES (
     $1, $2, $3
 ) RETURNING *;
+
+-- name: UpdateParticipantLastRead :exec
+UPDATE conversation_participants
+SET last_read_at = now()
+WHERE conversation_id = $1 AND user_id = $2;
 
 -- name: CreateMessage :one
 INSERT INTO messages (

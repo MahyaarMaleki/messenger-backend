@@ -19,7 +19,7 @@ INSERT INTO conversation_participants (
     role
 ) VALUES (
     $1, $2, $3
-) RETURNING conversation_id, user_id, joined_at, role
+) RETURNING conversation_id, user_id, joined_at, role, last_read_at
 `
 
 type AddParticipantParams struct {
@@ -36,6 +36,7 @@ func (q *Queries) AddParticipant(ctx context.Context, arg AddParticipantParams) 
 		&i.UserID,
 		&i.JoinedAt,
 		&i.Role,
+		&i.LastReadAt,
 	)
 	return i, err
 }
@@ -71,24 +72,27 @@ func (q *Queries) CreateAttachment(ctx context.Context, arg CreateAttachmentPara
 const createConversation = `-- name: CreateConversation :one
 INSERT INTO conversations (
     name,
-    type
+    type,
+    avatar_url
 ) VALUES (
-    $1, $2
-) RETURNING id, name, type, created_at, last_message_at
+    $1, $2, $3
+) RETURNING id, name, type, avatar_url, created_at, last_message_at
 `
 
 type CreateConversationParams struct {
-	Name pgtype.Text `json:"name"`
-	Type string      `json:"type"`
+	Name      pgtype.Text `json:"name"`
+	Type      string      `json:"type"`
+	AvatarUrl string      `json:"avatarUrl"`
 }
 
 func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversationParams) (Conversation, error) {
-	row := q.db.QueryRow(ctx, createConversation, arg.Name, arg.Type)
+	row := q.db.QueryRow(ctx, createConversation, arg.Name, arg.Type, arg.AvatarUrl)
 	var i Conversation
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Type,
+		&i.AvatarUrl,
 		&i.CreatedAt,
 		&i.LastMessageAt,
 	)
@@ -159,7 +163,7 @@ func (q *Queries) FindExistingPrivateChat(ctx context.Context, arg FindExistingP
 }
 
 const getConversation = `-- name: GetConversation :one
-SELECT id, name, type, created_at, last_message_at FROM conversations
+SELECT id, name, type, avatar_url, created_at, last_message_at FROM conversations
 WHERE id = $1 LIMIT 1
 `
 
@@ -170,6 +174,7 @@ func (q *Queries) GetConversation(ctx context.Context, id uuid.UUID) (Conversati
 		&i.ID,
 		&i.Name,
 		&i.Type,
+		&i.AvatarUrl,
 		&i.CreatedAt,
 		&i.LastMessageAt,
 	)
@@ -293,7 +298,7 @@ func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error)
 }
 
 const getParticipant = `-- name: GetParticipant :one
-SELECT conversation_id, user_id, joined_at, role FROM conversation_participants
+SELECT conversation_id, user_id, joined_at, role, last_read_at FROM conversation_participants
 WHERE conversation_id = $1 AND user_id = $2
 LIMIT 1
 `
@@ -311,6 +316,7 @@ func (q *Queries) GetParticipant(ctx context.Context, arg GetParticipantParams) 
 		&i.UserID,
 		&i.JoinedAt,
 		&i.Role,
+		&i.LastReadAt,
 	)
 	return i, err
 }
@@ -457,7 +463,7 @@ const updateConversation = `-- name: UpdateConversation :one
 UPDATE conversations
 SET name = $2
 WHERE id = $1
-RETURNING id, name, type, created_at, last_message_at
+RETURNING id, name, type, avatar_url, created_at, last_message_at
 `
 
 type UpdateConversationParams struct {
@@ -472,6 +478,7 @@ func (q *Queries) UpdateConversation(ctx context.Context, arg UpdateConversation
 		&i.ID,
 		&i.Name,
 		&i.Type,
+		&i.AvatarUrl,
 		&i.CreatedAt,
 		&i.LastMessageAt,
 	)
@@ -518,4 +525,20 @@ func (q *Queries) UpdateMessage(ctx context.Context, arg UpdateMessageParams) (M
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const updateParticipantLastRead = `-- name: UpdateParticipantLastRead :exec
+UPDATE conversation_participants
+SET last_read_at = now()
+WHERE conversation_id = $1 AND user_id = $2
+`
+
+type UpdateParticipantLastReadParams struct {
+	ConversationID uuid.UUID `json:"conversationId"`
+	UserID         uuid.UUID `json:"userId"`
+}
+
+func (q *Queries) UpdateParticipantLastRead(ctx context.Context, arg UpdateParticipantLastReadParams) error {
+	_, err := q.db.Exec(ctx, updateParticipantLastRead, arg.ConversationID, arg.UserID)
+	return err
 }

@@ -759,3 +759,27 @@ func (server *Server) updateConversation(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(newConversationResponse(updatedChat, nil))
 }
+
+func (server *Server) MarkConversationAsRead(w http.ResponseWriter, r *http.Request) {
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// B. Update
+	if err = server.store.UpdateParticipantLastRead(r.Context(), db.UpdateParticipantLastReadParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	}); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Last seen updated"})
+}
