@@ -38,14 +38,9 @@ type (
 	}
 
 	createConversationRequest struct {
-		// 'private', 'group', or 'channel'
-		Type string `json:"type" validate:"required,oneof=private group channel"`
-
-		// Required if type is 'private'
+		Name           *string `json:"name" validate:"required_if=Type group,required_if=Type channel,omitempty,min=3"`
+		Type           string  `json:"type" validate:"required,oneof=private group channel"`
 		TargetUsername *string `json:"targetUsername" validate:"required_if=Type private"`
-
-		// Required if type is 'group' or 'channel'
-		Name *string `json:"name" validate:"required_if=Type group,required_if=Type channel,omitempty,min=3"`
 	}
 
 	attachmentDTO struct {
@@ -150,9 +145,21 @@ func newUserProfileResponse(user db.User) userProfileResponse {
 }
 
 func newConversationResponse(c db.Conversation, otherUser *userProfileResponse) conversationResponse {
+	displayName := c.Name.String
+
+	if c.Type == "private" {
+		if otherUser != nil {
+			displayName = otherUser.Username
+			// Or: displayName = otherUser.FirstName + " " + otherUser.LastName
+		} else {
+			// Edge case: User deleted or self-chat
+			displayName = "Unknown User"
+		}
+	}
+
 	return conversationResponse{
 		ID:               c.ID,
-		Name:             c.Name.String,
+		Name:             displayName,
 		Type:             c.Type,
 		LastMessageAt:    c.LastMessageAt.Time,
 		CreatedAt:        c.CreatedAt.Time,
