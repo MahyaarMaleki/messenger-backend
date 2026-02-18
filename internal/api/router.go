@@ -76,7 +76,6 @@ func (server *Server) setupRouter() {
 
 				r.Post("/", server.createConversation)       // Start new chat
 				r.Get("/", server.getUserConversations)      // Inbox
-				r.Put("/", server.updateConversation)        // Rename Group
 				r.Delete("/leave", server.leaveConversation) // Leave Group
 
 				// Sub-routes for a specific chat
@@ -86,6 +85,7 @@ func (server *Server) setupRouter() {
 					r.Delete("/leave", server.leaveConversation)                 // Leave chat
 					r.Post("/join", server.joinChannel)                          // Join Channel
 					r.Post("/participants", server.addParticipant)               // Add Member
+					r.Post("/read", server.MarkConversationAsRead)               // Mark as Read
 					r.Delete("/participants/{userId}", server.removeParticipant) // Kick Member
 
 					// Message Management
