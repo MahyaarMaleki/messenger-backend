@@ -78,6 +78,8 @@ func (server *Server) setupRouter() {
 				r.Get("/", server.getUserConversations)      // Inbox
 				r.Delete("/leave", server.leaveConversation) // Leave Group
 
+				r.Post("/join/{token}", server.consumeInvite)
+
 				// Sub-routes for a specific chat
 				r.Route("/{id}", func(r chi.Router) {
 					// Group/Channel Management
@@ -87,6 +89,9 @@ func (server *Server) setupRouter() {
 					r.Post("/participants", server.addParticipant)               // Add Member
 					r.Post("/read", server.MarkConversationAsRead)               // Mark as Read
 					r.Delete("/participants/{userId}", server.removeParticipant) // Kick Member
+					r.Get("/role", server.getMyRole)                             // Fetch my role in this chat
+
+					r.Post("/invites", server.generateInvite)
 
 					// Message Management
 					r.Post("/messages", server.createMessage)               // Send
