@@ -160,11 +160,11 @@ func (server *Server) getUserConversations(w http.ResponseWriter, r *http.Reques
 
 	res := make([]conversationResponse, len(rows))
 	for i, row := range rows {
-		// Base Conversation Data
 		c := conversationResponse{
 			ID:            row.ID,
-			Name:          row.Name.String, // "Dev Team" or ""
+			Name:          row.Name.String,
 			Type:          row.Type,
+			LastMessage:   row.LastMessage,
 			LastMessageAt: row.LastMessageAt.Time,
 			CreatedAt:     row.CreatedAt.Time,
 		}
