@@ -349,6 +349,7 @@ SELECT
     c.last_message_at,
     cp.role,
     cp.joined_at,
+    (SELECT content FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_message,
     -- Fetch the "Other User" info (Nullable, only for private chats)
     u.username AS other_username,
     u.first_name AS other_first_name,
@@ -374,6 +375,7 @@ type GetUserConversationsRow struct {
 	LastMessageAt  pgtype.Timestamptz `json:"lastMessageAt"`
 	Role           string             `json:"role"`
 	JoinedAt       pgtype.Timestamptz `json:"joinedAt"`
+	LastMessage    string             `json:"lastMessage"`
 	OtherUsername  pgtype.Text        `json:"otherUsername"`
 	OtherFirstName pgtype.Text        `json:"otherFirstName"`
 	OtherLastName  pgtype.Text        `json:"otherLastName"`
@@ -400,6 +402,7 @@ func (q *Queries) GetUserConversations(ctx context.Context, userID uuid.UUID) ([
 			&i.LastMessageAt,
 			&i.Role,
 			&i.JoinedAt,
+			&i.LastMessage,
 			&i.OtherUsername,
 			&i.OtherFirstName,
 			&i.OtherLastName,

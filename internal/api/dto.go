@@ -93,6 +93,7 @@ type (
 		ID               uuid.UUID            `json:"id"`
 		Name             string               `json:"name"`
 		Type             string               `json:"type"`
+		LastMessage      string               `json:"lastMessage"`
 		LastMessageAt    time.Time            `json:"lastMessageAt"`
 		CreatedAt        time.Time            `json:"createdAt"`
 		OtherParticipant *userProfileResponse `json:"otherParticipant,omitempty"`
