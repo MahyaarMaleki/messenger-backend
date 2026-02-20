@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -279,11 +281,20 @@ func (server *Server) createMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	senderUser, err := server.store.GetUserById(r.Context(), authPayload.UserID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	senderProfile := newUserProfileResponse(senderUser)
+
 	// --- Real-Time Broadcast Logic ---
 
 	// 1. Prepare the Response Payload
 	// We construct the data once, then send this exact JSON to everyone
-	response := newMessageResponse(message, req.Attachments)
+	response := newMessageResponse(message, &senderProfile, req.Attachments)
 
 	// 2. Run Broadcast in Background
 	// Use a goroutine so that the API responds immediately to the sender
@@ -384,8 +395,15 @@ func (server *Server) getMessages(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt:      row.UpdatedAt,
 		}
 
+		senderProfile := &userProfileResponse{
+			Username:  row.SenderUsername,
+			FirstName: row.SenderFirstName,
+			LastName:  row.SenderLastName,
+			AvatarUrl: row.SenderAvatarUrl.String,
+		}
+
 		// C. Create Response
-		res[i] = newMessageResponse(msg, attachments)
+		res[i] = newMessageResponse(msg, senderProfile, attachments)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -446,7 +464,7 @@ func (server *Server) updateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5. Update
+	// 5. Update message
 	updatedMessage, err := server.store.UpdateMessage(r.Context(), db.UpdateMessageParams{
 		ID:      messageID,
 		Content: req.Content,
@@ -458,9 +476,19 @@ func (server *Server) updateMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 6. Fetch Sender Profile (Current User)
+	senderUser, err := server.store.GetUserById(r.Context(), authPayload.UserID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	senderProfile := newUserProfileResponse(senderUser)
+
 	// For simplicity, we return the message without attachments here
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(newMessageResponse(updatedMessage, nil))
+	json.NewEncoder(w).Encode(newMessageResponse(updatedMessage, &senderProfile, nil))
 }
 
 func (server *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
@@ -782,4 +810,169 @@ func (server *Server) MarkConversationAsRead(w http.ResponseWriter, r *http.Requ
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Last seen updated"})
+}
+
+// generateInvite creates a new invite link for a conversation (Admin only)
+func (server *Server) generateInvite(w http.ResponseWriter, r *http.Request) {
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	encoder := json.NewEncoder(w)
+
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	req := new(generateInviteRequest)
+	// If body is empty, defaults will be 0. We'll set safe defaults below.
+	_ = json.NewDecoder(r.Body).Decode(req)
+
+	if req.MaxUses <= 0 {
+		req.MaxUses = 1 // Default to one-time use
+	}
+	if req.ExpiresInHours <= 0 {
+		req.ExpiresInHours = 24 // Default to 24 hours
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// 1. Security Check: Only admins can generate invite links
+	myself, err := server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	})
+	if err != nil || myself.Role != "admin" {
+		w.WriteHeader(http.StatusForbidden)
+		_ = encoder.Encode(errorResponse("Only admins can generate invite links"))
+		return
+	}
+
+	// 2. Generate a secure, 12-character URL-safe token
+	b := make([]byte, 9) // 9 random bytes
+	rand.Read(b)
+	// Base64 URLEncoding replaces + and / with - and _ so it doesn't break URLs
+	token := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(b)
+	expiresAt := time.Now().Add(time.Hour * time.Duration(req.ExpiresInHours))
+
+	// 3. Save to Database
+	invite, err := server.store.CreateConversationInvite(r.Context(), db.CreateConversationInviteParams{
+		Token:          token,
+		ConversationID: conversationID,
+		CreatedBy:      authPayload.UserID,
+		MaxUses:        req.MaxUses,
+		ExpiresAt:      pgtype.Timestamptz{Time: expiresAt, Valid: true},
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	_ = encoder.Encode(inviteResponse{
+		Token:          invite.Token,
+		ConversationID: invite.ConversationID,
+		MaxUses:        invite.MaxUses,
+		ExpiresAt:      invite.ExpiresAt.Time,
+	})
+}
+
+// consumeInvite processes an invitation link click and adds the user to the group
+func (server *Server) consumeInvite(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	encoder := json.NewEncoder(w)
+
+	if token == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse("Token is required"))
+		return
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// 1. Fetch Invite first to check if user is already in the group
+	// (so we don't burn a 1-time link if they just accidentally clicked it again)
+	invite, err := server.store.GetConversationInvite(r.Context(), token)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			_ = encoder.Encode(errorResponse("Invite link is invalid or expired"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	// Check if already in group
+	_, err = server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+		ConversationID: invite.ConversationID,
+		UserID:         authPayload.UserID,
+	})
+	if err == nil {
+		// Already in the group, just return success without consuming the token
+		w.WriteHeader(http.StatusOK)
+		_ = encoder.Encode(map[string]interface{}{
+			"message":        "Already a member",
+			"conversationId": invite.ConversationID,
+		})
+		return
+	}
+
+	// 2. Consume the Invite (Atomic Update)
+	consumedInvite, err := server.store.ConsumeConversationInvite(r.Context(), token)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusForbidden)
+			_ = encoder.Encode(errorResponse("Invite link has expired or reached its maximum uses"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	// 3. Add Participant as "member"
+	_, err = server.store.AddParticipant(r.Context(), db.AddParticipantParams{
+		ConversationID: consumedInvite.ConversationID,
+		UserID:         authPayload.UserID,
+		Role:           "member",
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = encoder.Encode(map[string]interface{}{
+		"message":        "Successfully joined the conversation",
+		"conversationId": consumedInvite.ConversationID,
+	})
+}
+
+// getMyRole returns the current user's role in the specified conversation
+func (server *Server) getMyRole(w http.ResponseWriter, r *http.Request) {
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	participant, err := server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	})
+
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(errorResponse("Participant not found"))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"role": participant.Role})
 }

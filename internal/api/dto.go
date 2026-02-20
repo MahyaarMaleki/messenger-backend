@@ -79,13 +79,14 @@ type (
 	}
 
 	messageResponse struct {
-		ID             uuid.UUID       `json:"id"`
-		ConversationID uuid.UUID       `json:"conversationId"`
-		SenderID       uuid.UUID       `json:"senderId"`
-		Content        string          `json:"content"`
-		Attachments    []attachmentDTO `json:"attachments"`
-		CreatedAt      time.Time       `json:"createdAt"`
-		UpdatedAt      time.Time       `json:"updatedAt"`
+		ID             uuid.UUID            `json:"id"`
+		ConversationID uuid.UUID            `json:"conversationId"`
+		SenderID       uuid.UUID            `json:"senderId"`
+		Sender         *userProfileResponse `json:"sender"`
+		Content        string               `json:"content"`
+		Attachments    []attachmentDTO      `json:"attachments"`
+		CreatedAt      time.Time            `json:"createdAt"`
+		UpdatedAt      time.Time            `json:"updatedAt"`
 	}
 
 	conversationResponse struct {
@@ -179,15 +180,15 @@ func newConversationResponse(c db.Conversation, otherUser *userProfileResponse) 
 	}
 }
 
-func newMessageResponse(msg db.Message, attachments []attachmentDTO) messageResponse {
+func newMessageResponse(msg db.Message, sender *userProfileResponse, attachments []attachmentDTO) messageResponse {
 	if attachments == nil {
 		attachments = []attachmentDTO{}
 	}
-
 	return messageResponse{
 		ID:             msg.ID,
 		ConversationID: msg.ConversationID,
 		SenderID:       msg.SenderID,
+		Sender:         sender,
 		Content:        msg.Content,
 		Attachments:    attachments,
 		CreatedAt:      msg.CreatedAt.Time,

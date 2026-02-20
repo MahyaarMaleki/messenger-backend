@@ -53,6 +53,10 @@ SELECT
     m.content,
     m.created_at,
     m.updated_at,
+    u.username AS sender_username,
+    u.first_name AS sender_first_name,
+    u.last_name AS sender_last_name,
+    u.avatar_url AS sender_avatar_url,
     COALESCE(
         json_agg(
         json_build_object(
@@ -65,9 +69,16 @@ SELECT
         '[]'
     )::jsonb AS attachments
 FROM messages m
+JOIN users u ON m.sender_id = u.id
 LEFT JOIN message_attachments ma ON m.id = ma.message_id
 WHERE m.conversation_id = $1
-GROUP BY m.id, m.created_at
+GROUP BY
+    m.id,
+    m.created_at,
+    u.username,
+    u.first_name,
+    u.last_name,
+    u.avatar_url
 ORDER BY m.created_at DESC
 LIMIT $2 OFFSET $3;
 

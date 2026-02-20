@@ -189,6 +189,10 @@ SELECT
     m.content,
     m.created_at,
     m.updated_at,
+    u.username AS sender_username,
+    u.first_name AS sender_first_name,
+    u.last_name AS sender_last_name,
+    u.avatar_url AS sender_avatar_url,
     COALESCE(
         json_agg(
         json_build_object(
@@ -201,9 +205,16 @@ SELECT
         '[]'
     )::jsonb AS attachments
 FROM messages m
+JOIN users u ON m.sender_id = u.id
 LEFT JOIN message_attachments ma ON m.id = ma.message_id
 WHERE m.conversation_id = $1
-GROUP BY m.id, m.created_at
+GROUP BY
+    m.id,
+    m.created_at,
+    u.username,
+    u.first_name,
+    u.last_name,
+    u.avatar_url
 ORDER BY m.created_at DESC
 LIMIT $2 OFFSET $3
 `
@@ -215,13 +226,17 @@ type GetConversationMessagesParams struct {
 }
 
 type GetConversationMessagesRow struct {
-	ID             uuid.UUID          `json:"id"`
-	ConversationID uuid.UUID          `json:"conversationId"`
-	SenderID       uuid.UUID          `json:"senderId"`
-	Content        string             `json:"content"`
-	CreatedAt      pgtype.Timestamptz `json:"createdAt"`
-	UpdatedAt      pgtype.Timestamptz `json:"updatedAt"`
-	Attachments    []byte             `json:"attachments"`
+	ID              uuid.UUID          `json:"id"`
+	ConversationID  uuid.UUID          `json:"conversationId"`
+	SenderID        uuid.UUID          `json:"senderId"`
+	Content         string             `json:"content"`
+	CreatedAt       pgtype.Timestamptz `json:"createdAt"`
+	UpdatedAt       pgtype.Timestamptz `json:"updatedAt"`
+	SenderUsername  string             `json:"senderUsername"`
+	SenderFirstName string             `json:"senderFirstName"`
+	SenderLastName  string             `json:"senderLastName"`
+	SenderAvatarUrl pgtype.Text        `json:"senderAvatarUrl"`
+	Attachments     []byte             `json:"attachments"`
 }
 
 // GetConversationMessages Loads messages for a specific chat with pagination support
@@ -241,6 +256,10 @@ func (q *Queries) GetConversationMessages(ctx context.Context, arg GetConversati
 			&i.Content,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SenderUsername,
+			&i.SenderFirstName,
+			&i.SenderLastName,
+			&i.SenderAvatarUrl,
 			&i.Attachments,
 		); err != nil {
 			return nil, err
