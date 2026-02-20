@@ -18,6 +18,16 @@ type Conversation struct {
 	LastMessageAt pgtype.Timestamptz `json:"lastMessageAt"`
 }
 
+type ConversationInvite struct {
+	Token          string             `json:"token"`
+	ConversationID uuid.UUID          `json:"conversationId"`
+	CreatedBy      uuid.UUID          `json:"createdBy"`
+	MaxUses        int32              `json:"maxUses"`
+	UsesCount      int32              `json:"usesCount"`
+	ExpiresAt      pgtype.Timestamptz `json:"expiresAt"`
+	CreatedAt      pgtype.Timestamptz `json:"createdAt"`
+}
+
 type ConversationParticipant struct {
 	ConversationID uuid.UUID          `json:"conversationId"`
 	UserID         uuid.UUID          `json:"userId"`

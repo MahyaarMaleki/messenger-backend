@@ -66,6 +66,18 @@ type (
 		Name string `json:"name" validate:"required,min=3"`
 	}
 
+	generateInviteRequest struct {
+		MaxUses        int32 `json:"maxUses"`
+		ExpiresInHours int   `json:"expiresInHours"`
+	}
+
+	inviteResponse struct {
+		Token          string    `json:"token"`
+		ConversationID uuid.UUID `json:"conversationId"`
+		MaxUses        int32     `json:"maxUses"`
+		ExpiresAt      time.Time `json:"expiresAt"`
+	}
+
 	messageResponse struct {
 		ID             uuid.UUID       `json:"id"`
 		ConversationID uuid.UUID       `json:"conversationId"`
