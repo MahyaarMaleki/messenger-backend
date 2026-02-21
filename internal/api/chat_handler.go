@@ -1191,3 +1191,54 @@ func (server *Server) checkInviteStatus(w http.ResponseWriter, r *http.Request) 
 		"conversationId": invite.ConversationID,
 	})
 }
+
+func (server *Server) globalSearch(w http.ResponseWriter, r *http.Request) {
+	searchQuery := r.URL.Query().Get("search")
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	encoder := json.NewEncoder(w)
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 5 {
+		limit = 5
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	arg := db.GlobalSearchParams{
+		SearchQuery: searchQuery,
+		Limit:       int32(limit),
+		Offset:      int32((page - 1) * limit),
+	}
+
+	results, err := server.store.GlobalSearch(r.Context(), arg)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	res := make([]globalSearchResponse, len(results))
+	for i, row := range results {
+		res[i] = globalSearchResponse{
+			ID:   row.ID,
+			Type: row.ResultType,
+		}
+
+		if row.ResultType == "user" {
+			res[i].Username = row.Username
+			res[i].FirstName = row.FirstName
+			res[i].LastName = row.LastName
+			res[i].AvatarUrl = row.AvatarUrl.String
+		} else if row.ResultType == "channel" {
+			// In our SQL, we mapped the channel's name to the 'search_name' column
+			res[i].Name = row.SearchName
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = encoder.Encode(res)
+}
