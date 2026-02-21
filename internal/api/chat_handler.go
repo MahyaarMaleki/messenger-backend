@@ -733,27 +733,134 @@ func (server *Server) joinChannel(w http.ResponseWriter, r *http.Request) {
 
 func (server *Server) leaveConversation(w http.ResponseWriter, r *http.Request) {
 	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	encoder := json.NewEncoder(w)
+
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(errorResponse("Invalid conversation ID"))
+		encoder.Encode(errorResponse("Invalid conversation ID"))
 		return
 	}
 
 	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
 
-	// Execute Delete (If user isn't in chat, this is a no-op, which is fine)
+	// 1. Fetch the conversation to check its type
+	conv, err := server.store.GetConversation(r.Context(), conversationID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			encoder.Encode(errorResponse("Conversation not found"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	// ==========================================
+	// SCENARIO A: PRIVATE CHAT (Hard Delete)
+	// ==========================================
+	if conv.Type == "private" {
+		err := server.store.DeleteConversation(r.Context(), conversationID)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			encoder.Encode(errorResponse(InternalServerErrorMsg))
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		encoder.Encode(map[string]string{"message": "Chat permanently deleted"})
+		return
+	}
+
+	// ==========================================
+	// SCENARIO B: GROUP / CHANNEL (Leave & Notify)
+	// ==========================================
+
+	// 1. Fetch the leaving user's profile and current role
+	user, err := server.store.GetUserById(r.Context(), authPayload.UserID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	role, err := server.store.GetParticipantRole(r.Context(), db.GetParticipantRoleParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	})
+
+	// 2. SUCCESSION LOGIC: If they are an admin/creator, check if we need to promote someone
+	if role == "admin" || role == "creator" {
+		remainingAdmins, _ := server.store.CountRemainingAdmins(r.Context(), db.CountRemainingAdminsParams{
+			ConversationID: conversationID,
+			UserID:         authPayload.UserID, // Exclude the person leaving
+		})
+
+		// If no admins are left, find the next oldest member to promote
+		if remainingAdmins == 0 {
+			nextAdminID, err := server.store.GetOldestRemainingParticipant(r.Context(), db.GetOldestRemainingParticipantParams{
+				ConversationID: conversationID,
+				UserID:         authPayload.UserID,
+			})
+
+			// err will be sql.ErrNoRows if they were the literal last person in the group
+			if err == nil {
+				// Promote the oldest remaining member to admin
+				_ = server.store.UpdateParticipantRole(r.Context(), db.UpdateParticipantRoleParams{
+					ConversationID: conversationID,
+					UserID:         nextAdminID,
+					Role:           "admin",
+				})
+
+				// Optional: Send a second system message announcing the promotion!
+				promotedUser, _ := server.store.GetUserById(r.Context(), nextAdminID)
+				promoMsg, _ := server.store.CreateMessage(r.Context(), db.CreateMessageParams{
+					ConversationID: conversationID,
+					SenderID:       authPayload.UserID,
+					Content:        promotedUser.Username + " is now an admin.",
+				})
+
+				// Broadcast the promotion message
+				participants, _ := server.store.GetConversationParticipants(r.Context(), conversationID)
+				sysProfile := &userProfileResponse{Username: "System", AvatarUrl: ""}
+				go server.hub.Broadcast(participants, newMessageResponse(promoMsg, sysProfile, nil))
+			}
+		}
+	}
+
+	// 3. Create the standard "Left Chat" System Message
+	systemMsgContent := user.Username + " has left the chat."
+	sysMessage, err := server.store.CreateMessage(r.Context(), db.CreateMessageParams{
+		ConversationID: conversationID,
+		SenderID:       authPayload.UserID,
+		Content:        systemMsgContent,
+	})
+
+	if err == nil {
+		participants, _ := server.store.GetConversationParticipants(r.Context(), conversationID)
+		sysProfile := &userProfileResponse{Username: "System", AvatarUrl: ""}
+		go server.hub.Broadcast(participants, newMessageResponse(sysMessage, sysProfile, nil))
+	}
+
+	// 4. Execute Delete: Remove the leaving user from the participants table
 	err = server.store.RemoveParticipant(r.Context(), db.RemoveParticipantParams{
 		ConversationID: conversationID,
 		UserID:         authPayload.UserID,
 	})
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
+		encoder.Encode(errorResponse(InternalServerErrorMsg))
 		return
 	}
 
+	// 5. Cleanup edge case: If the group is now completely empty, delete it
+	remainingMembers, _ := server.store.GetConversationParticipants(r.Context(), conversationID)
+	if len(remainingMembers) == 0 {
+		_ = server.store.DeleteConversation(r.Context(), conversationID)
+	}
+
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Left conversation successfully"})
+	encoder.Encode(map[string]string{"message": "Left conversation successfully"})
 }
 
 // 2. Kick Participant (Admin Only)
