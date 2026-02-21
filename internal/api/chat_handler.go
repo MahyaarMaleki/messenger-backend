@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -407,6 +408,14 @@ func (server *Server) getMessages(w http.ResponseWriter, r *http.Request) {
 			FirstName: row.SenderFirstName,
 			LastName:  row.SenderLastName,
 			AvatarUrl: row.SenderAvatarUrl.String,
+		}
+
+		// Intercept system messages
+		if strings.HasPrefix(msg.Content, "SYSTEM_EVENT:") {
+			msg.Content = strings.TrimPrefix(msg.Content, "SYSTEM_EVENT:")
+			senderProfile.Username = "System"
+			senderProfile.FirstName = "System"
+			senderProfile.AvatarUrl = ""
 		}
 
 		res[i] = newMessageResponse(msg, senderProfile, attachments)
@@ -818,13 +827,15 @@ func (server *Server) leaveConversation(w http.ResponseWriter, r *http.Request) 
 					Role:           "admin",
 				})
 
-				// Optional: Send a second system message announcing the promotion!
+				// Send a second system message announcing the promotion!
 				promotedUser, _ := server.store.GetUserById(r.Context(), nextAdminID)
+				promoText := promotedUser.Username + " is now an admin."
 				promoMsg, _ := server.store.CreateMessage(r.Context(), db.CreateMessageParams{
 					ConversationID: conversationID,
 					SenderID:       authPayload.UserID,
-					Content:        promotedUser.Username + " is now an admin.",
+					Content:        "SYSTEM_EVENT:" + promoText,
 				})
+				promoMsg.Content = promoText
 
 				// Broadcast the promotion message
 				participants, _ := server.store.GetConversationParticipants(r.Context(), conversationID)
@@ -839,10 +850,11 @@ func (server *Server) leaveConversation(w http.ResponseWriter, r *http.Request) 
 	sysMessage, err := server.store.CreateMessage(r.Context(), db.CreateMessageParams{
 		ConversationID: conversationID,
 		SenderID:       authPayload.UserID,
-		Content:        systemMsgContent,
+		Content:        "SYSTEM_EVENT:" + systemMsgContent,
 	})
 
 	if err == nil {
+		sysMessage.Content = systemMsgContent
 		participants, _ := server.store.GetConversationParticipants(r.Context(), conversationID)
 		sysProfile := &userProfileResponse{Username: "System", AvatarUrl: ""}
 		go server.hub.Broadcast(participants, newMessageResponse(sysMessage, sysProfile, nil))
@@ -1118,10 +1130,11 @@ func (server *Server) consumeInvite(w http.ResponseWriter, r *http.Request) {
 		sysMessage, err := server.store.CreateMessage(r.Context(), db.CreateMessageParams{
 			ConversationID: consumedInvite.ConversationID,
 			SenderID:       authPayload.UserID,
-			Content:        systemMsgContent,
+			Content:        "SYSTEM_EVENT:" + systemMsgContent,
 		})
 
 		if err == nil {
+			sysMessage.Content = systemMsgContent
 			participants, _ := server.store.GetConversationParticipants(r.Context(), consumedInvite.ConversationID)
 
 			sysProfile := &userProfileResponse{
