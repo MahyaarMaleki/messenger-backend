@@ -7,6 +7,10 @@ INSERT INTO conversations (
     $1, $2, $3
 ) RETURNING *;
 
+-- name: DeleteConversation :exec
+DELETE FROM conversations
+WHERE id = $1;
+
 -- name: AddParticipant :one
 INSERT INTO conversation_participants (
     conversation_id,
@@ -191,3 +195,24 @@ FROM conversation_participants cp
 JOIN users u ON cp.user_id = u.id
 WHERE cp.conversation_id = $1
 ORDER BY cp.role, u.username;
+
+-- name: GetParticipantRole :one
+SELECT role FROM conversation_participants
+WHERE conversation_id = $1 AND user_id = $2;
+
+-- name: CountRemainingAdmins :one
+SELECT COUNT(*) FROM conversation_participants
+WHERE conversation_id = $1
+  AND role IN ('admin', 'creator')
+  AND user_id != $2;
+
+-- name: GetOldestRemainingParticipant :one
+SELECT user_id FROM conversation_participants
+WHERE conversation_id = $1 AND user_id != $2
+ORDER BY joined_at
+LIMIT 1;
+
+-- name: UpdateParticipantRole :exec
+UPDATE conversation_participants
+SET role = $3
+WHERE conversation_id = $1 AND user_id = $2;

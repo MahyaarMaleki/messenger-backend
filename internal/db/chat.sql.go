@@ -41,6 +41,25 @@ func (q *Queries) AddParticipant(ctx context.Context, arg AddParticipantParams) 
 	return i, err
 }
 
+const countRemainingAdmins = `-- name: CountRemainingAdmins :one
+SELECT COUNT(*) FROM conversation_participants
+WHERE conversation_id = $1
+  AND role IN ('admin', 'creator')
+  AND user_id != $2
+`
+
+type CountRemainingAdminsParams struct {
+	ConversationID uuid.UUID `json:"conversationId"`
+	UserID         uuid.UUID `json:"userId"`
+}
+
+func (q *Queries) CountRemainingAdmins(ctx context.Context, arg CountRemainingAdminsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countRemainingAdmins, arg.ConversationID, arg.UserID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAttachment = `-- name: CreateAttachment :exec
 INSERT INTO message_attachments (
     message_id,
@@ -127,6 +146,16 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteConversation = `-- name: DeleteConversation :exec
+DELETE FROM conversations
+WHERE id = $1
+`
+
+func (q *Queries) DeleteConversation(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteConversation, id)
+	return err
 }
 
 const deleteMessage = `-- name: DeleteMessage :exec
@@ -377,6 +406,25 @@ func (q *Queries) GetMessage(ctx context.Context, id uuid.UUID) (Message, error)
 	return i, err
 }
 
+const getOldestRemainingParticipant = `-- name: GetOldestRemainingParticipant :one
+SELECT user_id FROM conversation_participants
+WHERE conversation_id = $1 AND user_id != $2
+ORDER BY joined_at
+LIMIT 1
+`
+
+type GetOldestRemainingParticipantParams struct {
+	ConversationID uuid.UUID `json:"conversationId"`
+	UserID         uuid.UUID `json:"userId"`
+}
+
+func (q *Queries) GetOldestRemainingParticipant(ctx context.Context, arg GetOldestRemainingParticipantParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getOldestRemainingParticipant, arg.ConversationID, arg.UserID)
+	var user_id uuid.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
 const getParticipant = `-- name: GetParticipant :one
 SELECT conversation_id, user_id, joined_at, role, last_read_at FROM conversation_participants
 WHERE conversation_id = $1 AND user_id = $2
@@ -399,6 +447,23 @@ func (q *Queries) GetParticipant(ctx context.Context, arg GetParticipantParams) 
 		&i.LastReadAt,
 	)
 	return i, err
+}
+
+const getParticipantRole = `-- name: GetParticipantRole :one
+SELECT role FROM conversation_participants
+WHERE conversation_id = $1 AND user_id = $2
+`
+
+type GetParticipantRoleParams struct {
+	ConversationID uuid.UUID `json:"conversationId"`
+	UserID         uuid.UUID `json:"userId"`
+}
+
+func (q *Queries) GetParticipantRole(ctx context.Context, arg GetParticipantRoleParams) (string, error) {
+	row := q.db.QueryRow(ctx, getParticipantRole, arg.ConversationID, arg.UserID)
+	var role string
+	err := row.Scan(&role)
+	return role, err
 }
 
 const getUserConversations = `-- name: GetUserConversations :many
@@ -623,5 +688,22 @@ type UpdateParticipantLastReadParams struct {
 
 func (q *Queries) UpdateParticipantLastRead(ctx context.Context, arg UpdateParticipantLastReadParams) error {
 	_, err := q.db.Exec(ctx, updateParticipantLastRead, arg.ConversationID, arg.UserID)
+	return err
+}
+
+const updateParticipantRole = `-- name: UpdateParticipantRole :exec
+UPDATE conversation_participants
+SET role = $3
+WHERE conversation_id = $1 AND user_id = $2
+`
+
+type UpdateParticipantRoleParams struct {
+	ConversationID uuid.UUID `json:"conversationId"`
+	UserID         uuid.UUID `json:"userId"`
+	Role           string    `json:"role"`
+}
+
+func (q *Queries) UpdateParticipantRole(ctx context.Context, arg UpdateParticipantRoleParams) error {
+	_, err := q.db.Exec(ctx, updateParticipantRole, arg.ConversationID, arg.UserID, arg.Role)
 	return err
 }
