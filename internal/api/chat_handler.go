@@ -1138,3 +1138,29 @@ func (server *Server) getMyRole(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"role": participant.Role})
 }
+
+func (server *Server) checkInviteStatus(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+	encoder := json.NewEncoder(w)
+
+	invite, err := server.store.GetConversationInvite(r.Context(), token)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		encoder.Encode(errorResponse("Invite not found or expired"))
+		return
+	}
+
+	_, err = server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+		ConversationID: invite.ConversationID,
+		UserID:         authPayload.UserID,
+	})
+
+	isMember := err == nil
+
+	w.WriteHeader(http.StatusOK)
+	encoder.Encode(map[string]interface{}{
+		"isMember":       isMember,
+		"conversationId": invite.ConversationID,
+	})
+}
