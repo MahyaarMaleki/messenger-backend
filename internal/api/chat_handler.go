@@ -342,17 +342,11 @@ func (server *Server) getMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := (page - 1) * limit
 
-	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
-
-	// 1. Security Check: Participant only
-	_, err = server.store.GetParticipant(r.Context(), db.GetParticipantParams{
-		ConversationID: conversationID,
-		UserID:         authPayload.UserID,
-	})
+	conv, err := server.store.GetConversation(r.Context(), conversationID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			w.WriteHeader(http.StatusForbidden)
-			_ = encoder.Encode(errorResponse("Access denied"))
+			w.WriteHeader(http.StatusNotFound)
+			_ = encoder.Encode(errorResponse("Conversation not found"))
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)
@@ -360,9 +354,27 @@ func (server *Server) getMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// 1. Security Check: Participant only (except public channels)
+	if conv.Type != "channel" {
+		_, err = server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+			ConversationID: conversationID,
+			UserID:         authPayload.UserID,
+		})
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				w.WriteHeader(http.StatusForbidden)
+				_ = encoder.Encode(errorResponse("Access denied"))
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+			return
+		}
+	}
+
 	// 2. Fetch Messages from DB
-	// 'rows' is now a slice of a custom generated struct (e.g. GetConversationMessagesRow)
-	// containing the standard fields PLUS the 'Attachments' []byte field.
 	rows, err := server.store.GetConversationMessages(r.Context(), db.GetConversationMessagesParams{
 		ConversationID: conversationID,
 		Limit:          int32(limit),
@@ -376,16 +388,11 @@ func (server *Server) getMessages(w http.ResponseWriter, r *http.Request) {
 
 	res := make([]messageResponse, len(rows))
 	for i, row := range rows {
-		// A. Parse the JSONB Attachments
 		var attachments []attachmentDTO
-		// row.Attachments is []byte (from the ::jsonb column)
 		if err := json.Unmarshal(row.Attachments, &attachments); err != nil {
-			// If JSON is corrupted or null, default to empty to prevent crash
 			attachments = []attachmentDTO{}
 		}
 
-		// B. Reconstruct the db.Message object manually
-		// We do this because 'row' is a special sqlc-generated struct, not the standard db.Message
 		msg := db.Message{
 			ID:             row.ID,
 			ConversationID: row.ConversationID,
@@ -402,7 +409,6 @@ func (server *Server) getMessages(w http.ResponseWriter, r *http.Request) {
 			AvatarUrl: row.SenderAvatarUrl.String,
 		}
 
-		// C. Create Response
 		res[i] = newMessageResponse(msg, senderProfile, attachments)
 	}
 
