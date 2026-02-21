@@ -79,7 +79,7 @@ func (server *Server) setupRouter() {
 				r.Delete("/leave", server.leaveConversation) // Leave Group
 
 				r.Post("/join/{token}", server.consumeInvite)
-				r.Get("/chats/join/{token}/check", server.checkInviteStatus)
+				r.Get("/join/{token}/check", server.checkInviteStatus)
 
 				// Sub-routes for a specific chat
 				r.Route("/{id}", func(r chi.Router) {
