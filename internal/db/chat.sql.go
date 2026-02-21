@@ -545,6 +545,82 @@ func (q *Queries) GetUserConversations(ctx context.Context, userID uuid.UUID) ([
 	return items, nil
 }
 
+const globalSearch = `-- name: GlobalSearch :many
+SELECT
+    id,
+    'user'::varchar AS result_type,
+    username,
+    first_name,
+    last_name,
+    avatar_url,
+    username AS search_name -- Used just for sorting
+FROM users
+WHERE username ILIKE '%' || $3::text || '%'
+   OR first_name ILIKE '%' || $3::text || '%'
+   OR last_name ILIKE '%' || $3::text || '%'
+
+UNION ALL
+
+SELECT
+    id,
+    'channel'::varchar AS result_type,
+    ''::varchar AS username,
+    ''::varchar AS first_name,
+    ''::varchar AS last_name,
+    ''::varchar AS avatar_url,
+    name AS search_name
+FROM conversations
+WHERE type = 'channel'
+  AND name ILIKE '%' || $3::text || '%'
+
+ORDER BY search_name
+LIMIT $1 OFFSET $2
+`
+
+type GlobalSearchParams struct {
+	Limit       int32  `json:"limit"`
+	Offset      int32  `json:"offset"`
+	SearchQuery string `json:"searchQuery"`
+}
+
+type GlobalSearchRow struct {
+	ID         uuid.UUID   `json:"id"`
+	ResultType string      `json:"resultType"`
+	Username   string      `json:"username"`
+	FirstName  string      `json:"firstName"`
+	LastName   string      `json:"lastName"`
+	AvatarUrl  pgtype.Text `json:"avatarUrl"`
+	SearchName string      `json:"searchName"`
+}
+
+func (q *Queries) GlobalSearch(ctx context.Context, arg GlobalSearchParams) ([]GlobalSearchRow, error) {
+	rows, err := q.db.Query(ctx, globalSearch, arg.Limit, arg.Offset, arg.SearchQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GlobalSearchRow
+	for rows.Next() {
+		var i GlobalSearchRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ResultType,
+			&i.Username,
+			&i.FirstName,
+			&i.LastName,
+			&i.AvatarUrl,
+			&i.SearchName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listParticipants = `-- name: ListParticipants :many
 SELECT
     u.username,

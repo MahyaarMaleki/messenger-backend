@@ -216,3 +216,34 @@ LIMIT 1;
 UPDATE conversation_participants
 SET role = $3
 WHERE conversation_id = $1 AND user_id = $2;
+
+-- name: GlobalSearch :many
+SELECT
+    id,
+    'user'::varchar AS result_type,
+    username,
+    first_name,
+    last_name,
+    avatar_url,
+    username AS search_name -- Used just for sorting
+FROM users
+WHERE username ILIKE '%' || sqlc.arg(search_query)::text || '%'
+   OR first_name ILIKE '%' || sqlc.arg(search_query)::text || '%'
+   OR last_name ILIKE '%' || sqlc.arg(search_query)::text || '%'
+
+UNION ALL
+
+SELECT
+    id,
+    'channel'::varchar AS result_type,
+    ''::varchar AS username,
+    ''::varchar AS first_name,
+    ''::varchar AS last_name,
+    ''::varchar AS avatar_url,
+    name AS search_name
+FROM conversations
+WHERE type = 'channel'
+  AND name ILIKE '%' || sqlc.arg(search_query)::text || '%'
+
+ORDER BY search_name
+LIMIT $1 OFFSET $2;
