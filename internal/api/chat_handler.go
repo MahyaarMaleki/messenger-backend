@@ -547,6 +547,61 @@ func (server *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Message deleted successfully"})
 }
 
+func (server *Server) getConversationParticipants(w http.ResponseWriter, r *http.Request) {
+	conversationIDStr := chi.URLParam(r, "id")
+	conversationID, err := uuid.Parse(conversationIDStr)
+	encoder := json.NewEncoder(w)
+
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// Are you a member of this chat?
+	_, err = server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusForbidden)
+			_ = encoder.Encode(errorResponse("Access denied"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	rows, err := server.store.GetConversationParticipantsDetailed(r.Context(), conversationID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
+	res := make([]participantResponse, len(rows))
+	for i, row := range rows {
+		res[i] = participantResponse{
+			User: participantUser{
+				ID:        row.ID,
+				Username:  row.Username,
+				FirstName: row.FirstName,
+				LastName:  row.LastName,
+				AvatarUrl: row.AvatarUrl.String,
+			},
+			Role:     row.Role,
+			JoinedAt: row.JoinedAt.Time,
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = encoder.Encode(res)
+}
+
 func (server *Server) addParticipant(w http.ResponseWriter, r *http.Request) {
 	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {

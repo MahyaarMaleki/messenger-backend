@@ -87,9 +87,10 @@ func (server *Server) setupRouter() {
 					r.Delete("/leave", server.leaveConversation)                 // Leave chat
 					r.Post("/join", server.joinChannel)                          // Join Channel
 					r.Post("/participants", server.addParticipant)               // Add Member
-					r.Post("/read", server.MarkConversationAsRead)               // Mark as Read
+					r.Get("/participants", server.getConversationParticipants)   // Fetch Members
 					r.Delete("/participants/{userId}", server.removeParticipant) // Kick Member
 					r.Get("/role", server.getMyRole)                             // Fetch my role in this chat
+					r.Post("/read", server.MarkConversationAsRead)               // Mark as Read
 
 					r.Post("/invites", server.generateInvite)
 

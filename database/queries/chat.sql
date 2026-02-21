@@ -119,6 +119,28 @@ LIMIT 1;
 SELECT user_id FROM conversation_participants
 WHERE conversation_id = $1;
 
+-- name: GetConversationParticipantsDetailed :many
+-- GetConversationParticipantsDetailed fetches full user profiles and roles for a chat
+SELECT
+    u.id,
+    u.username,
+    u.first_name,
+    u.last_name,
+    u.avatar_url,
+    cp.role,
+    cp.joined_at
+FROM conversation_participants cp
+JOIN users u ON cp.user_id = u.id
+WHERE cp.conversation_id = $1
+ORDER BY
+    -- This clever trick sorts 'creator' and 'admin' at the top of the list!
+    CASE cp.role
+        WHEN 'creator' THEN 1
+        WHEN 'admin' THEN 2
+        ELSE 3
+    END,
+    cp.joined_at;
+
 -- name: FindExistingPrivateChat :one
 SELECT c.id
 FROM conversations c

@@ -297,6 +297,67 @@ func (q *Queries) GetConversationParticipants(ctx context.Context, conversationI
 	return items, nil
 }
 
+const getConversationParticipantsDetailed = `-- name: GetConversationParticipantsDetailed :many
+SELECT
+    u.id,
+    u.username,
+    u.first_name,
+    u.last_name,
+    u.avatar_url,
+    cp.role,
+    cp.joined_at
+FROM conversation_participants cp
+JOIN users u ON cp.user_id = u.id
+WHERE cp.conversation_id = $1
+ORDER BY
+    -- This clever trick sorts 'creator' and 'admin' at the top of the list!
+    CASE cp.role
+        WHEN 'creator' THEN 1
+        WHEN 'admin' THEN 2
+        ELSE 3
+    END,
+    cp.joined_at
+`
+
+type GetConversationParticipantsDetailedRow struct {
+	ID        uuid.UUID          `json:"id"`
+	Username  string             `json:"username"`
+	FirstName string             `json:"firstName"`
+	LastName  string             `json:"lastName"`
+	AvatarUrl pgtype.Text        `json:"avatarUrl"`
+	Role      string             `json:"role"`
+	JoinedAt  pgtype.Timestamptz `json:"joinedAt"`
+}
+
+// GetConversationParticipantsDetailed fetches full user profiles and roles for a chat
+func (q *Queries) GetConversationParticipantsDetailed(ctx context.Context, conversationID uuid.UUID) ([]GetConversationParticipantsDetailedRow, error) {
+	rows, err := q.db.Query(ctx, getConversationParticipantsDetailed, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetConversationParticipantsDetailedRow
+	for rows.Next() {
+		var i GetConversationParticipantsDetailedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.FirstName,
+			&i.LastName,
+			&i.AvatarUrl,
+			&i.Role,
+			&i.JoinedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getMessage = `-- name: GetMessage :one
 SELECT id, conversation_id, sender_id, content, created_at, updated_at FROM messages
 WHERE id = $1 LIMIT 1

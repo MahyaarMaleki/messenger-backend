@@ -133,6 +133,20 @@ type (
 		Bio       string `json:"bio"`
 		AvatarUrl string `json:"avatarUrl"`
 	}
+
+	participantUser struct {
+		ID        uuid.UUID `json:"id"`
+		Username  string    `json:"username"`
+		FirstName string    `json:"firstName"`
+		LastName  string    `json:"lastName"`
+		AvatarUrl string    `json:"avatarUrl"`
+	}
+
+	participantResponse struct {
+		User     participantUser `json:"user"`
+		Role     string          `json:"role"`
+		JoinedAt time.Time       `json:"joinedAt"`
+	}
 )
 
 func newUserResponse(user db.User) userResponse {
