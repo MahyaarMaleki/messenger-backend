@@ -147,6 +147,16 @@ type (
 		Role     string          `json:"role"`
 		JoinedAt time.Time       `json:"joinedAt"`
 	}
+
+	globalSearchResponse struct {
+		ID        uuid.UUID `json:"id"`
+		Type      string    `json:"type"` // 'user' or 'channel'
+		Username  string    `json:"username,omitempty"`
+		FirstName string    `json:"firstName,omitempty"`
+		LastName  string    `json:"lastName,omitempty"`
+		AvatarUrl string    `json:"avatarUrl,omitempty"`
+		Name      string    `json:"name,omitempty"` // For channels
+	}
 )
 
 func newUserResponse(user db.User) userResponse {
