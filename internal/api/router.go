@@ -103,6 +103,9 @@ func (server *Server) setupRouter() {
 				})
 			})
 
+			// Search route
+			r.Get("/search", server.globalSearch)
+
 			// Upload route
 			r.Group(func(r chi.Router) {
 				r.Use(server.AuthMiddleware)
