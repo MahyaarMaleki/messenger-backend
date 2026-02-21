@@ -1106,6 +1106,33 @@ func (server *Server) consumeInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user, err := server.store.GetUserById(r.Context(), authPayload.UserID)
+	if err == nil {
+		systemMsgContent := user.Username + " has joined the chat."
+		sysMessage, err := server.store.CreateMessage(r.Context(), db.CreateMessageParams{
+			ConversationID: consumedInvite.ConversationID,
+			SenderID:       authPayload.UserID,
+			Content:        systemMsgContent,
+		})
+
+		if err == nil {
+			participants, _ := server.store.GetConversationParticipants(r.Context(), consumedInvite.ConversationID)
+
+			sysProfile := &userProfileResponse{
+				Username:  "System",
+				FirstName: "System",
+				AvatarUrl: "",
+			}
+
+			wsResponse := newMessageResponse(sysMessage, sysProfile, nil)
+			go server.hub.Broadcast(participants, wsResponse)
+		} else {
+			log.Printf("Failed to create system join message: %v", err)
+		}
+	} else {
+		log.Printf("Failed to fetch user profile for join message: %v", err)
+	}
+
 	w.WriteHeader(http.StatusOK)
 	_ = encoder.Encode(map[string]interface{}{
 		"message":        "Successfully joined the conversation",
