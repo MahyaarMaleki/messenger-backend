@@ -575,8 +575,20 @@ func (server *Server) getConversationParticipants(w http.ResponseWriter, r *http
 
 	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
 
+	conversation, err := server.store.GetConversation(r.Context(), conversationID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			_ = encoder.Encode(errorResponse("Conversation not found"))
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
+		return
+	}
+
 	// Are you a member of this chat?
-	_, err = server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+	participant, err := server.store.GetParticipant(r.Context(), db.GetParticipantParams{
 		ConversationID: conversationID,
 		UserID:         authPayload.UserID,
 	})
@@ -589,6 +601,15 @@ func (server *Server) getConversationParticipants(w http.ResponseWriter, r *http
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = encoder.Encode(errorResponse(InternalServerErrorMsg))
 		return
+	}
+
+	// If it's a channel, only admins/creators can see members
+	if conversation.Type == "channel" {
+		if participant.Role != "admin" {
+			w.WriteHeader(http.StatusForbidden)
+			_ = encoder.Encode(errorResponse("Only admins can view channel members"))
+			return
+		}
 	}
 
 	rows, err := server.store.GetConversationParticipantsDetailed(r.Context(), conversationID)
