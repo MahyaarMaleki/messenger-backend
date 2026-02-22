@@ -92,6 +92,7 @@ func (server *Server) setupRouter() {
 					r.Delete("/participants/{userId}", server.removeParticipant) // Kick Member
 					r.Get("/role", server.getMyRole)                             // Fetch my role in this chat
 					r.Post("/read", server.MarkConversationAsRead)               // Mark as Read
+					r.Get("/voice/token", server.generateVoiceToken)
 
 					r.Post("/invites", server.generateInvite)
 
