@@ -196,6 +196,10 @@ JOIN users u ON cp.user_id = u.id
 WHERE cp.conversation_id = $1
 ORDER BY cp.role, u.username;
 
+-- name: GetAdminParticipants :many
+SELECT user_id FROM conversation_participants
+WHERE conversation_id = $1 AND role IN ('admin', 'creator');
+
 -- name: GetParticipantRole :one
 SELECT role FROM conversation_participants
 WHERE conversation_id = $1 AND user_id = $2;

@@ -191,6 +191,31 @@ func (q *Queries) FindExistingPrivateChat(ctx context.Context, arg FindExistingP
 	return id, err
 }
 
+const getAdminParticipants = `-- name: GetAdminParticipants :many
+SELECT user_id FROM conversation_participants
+WHERE conversation_id = $1 AND role IN ('admin', 'creator')
+`
+
+func (q *Queries) GetAdminParticipants(ctx context.Context, conversationID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, getAdminParticipants, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var user_id uuid.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getConversation = `-- name: GetConversation :one
 SELECT id, name, type, avatar_url, created_at, last_message_at FROM conversations
 WHERE id = $1 LIMIT 1
