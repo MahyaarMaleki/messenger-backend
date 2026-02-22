@@ -356,9 +356,19 @@ func (server *Server) getMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+	userRole := "observer"
+
+	// Fetch the actual role
+	participantInfo, err := server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	})
+	if err == nil {
+		userRole = participantInfo.Role
+	}
 
 	// 1. Security Check: Participant only (except public channels)
-	if conv.Type != "channel" {
+	if conv.Type != "channel" && err != nil {
 		_, err = server.store.GetParticipant(r.Context(), db.GetParticipantParams{
 			ConversationID: conversationID,
 			UserID:         authPayload.UserID,
@@ -387,8 +397,8 @@ func (server *Server) getMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := make([]messageResponse, len(rows))
-	for i, row := range rows {
+	var res []messageResponse
+	for _, row := range rows {
 		var attachments []attachmentDTO
 		if err := json.Unmarshal(row.Attachments, &attachments); err != nil {
 			attachments = []attachmentDTO{}
@@ -410,15 +420,14 @@ func (server *Server) getMessages(w http.ResponseWriter, r *http.Request) {
 			AvatarUrl: row.SenderAvatarUrl.String,
 		}
 
-		// Intercept system messages
-		if strings.HasPrefix(msg.Content, "SYSTEM_EVENT:") {
-			msg.Content = strings.TrimPrefix(msg.Content, "SYSTEM_EVENT:")
-			senderProfile.Username = "System"
-			senderProfile.FirstName = "System"
-			senderProfile.AvatarUrl = ""
+		// Hide channel system messages from observers
+		if conv.Type == "channel" && strings.HasPrefix(msg.Content, "SYSTEM_EVENT:") {
+			if userRole != "admin" && userRole != "creator" {
+				continue // Skip adding this message to the response
+			}
 		}
 
-		res[i] = newMessageResponse(msg, senderProfile, attachments)
+		res = append(res, newMessageResponse(msg, senderProfile, attachments))
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -856,18 +865,29 @@ func (server *Server) leaveConversation(w http.ResponseWriter, r *http.Request) 
 					SenderID:       authPayload.UserID,
 					Content:        "SYSTEM_EVENT:" + promoText,
 				})
-				promoMsg.Content = promoText
 
 				// Broadcast the promotion message
 				participants, _ := server.store.GetConversationParticipants(r.Context(), conversationID)
-				sysProfile := &userProfileResponse{Username: "System", AvatarUrl: ""}
-				go server.hub.Broadcast(participants, newMessageResponse(promoMsg, sysProfile, nil))
+				wsProfile := &userProfileResponse{
+					Username:  user.Username,
+					FirstName: user.FirstName,
+					LastName:  user.LastName,
+					AvatarUrl: user.AvatarUrl.String,
+				}
+				go server.hub.Broadcast(participants, newMessageResponse(promoMsg, wsProfile, nil))
 			}
 		}
 	}
 
 	// 3. Create the standard "Left Chat" System Message
-	systemMsgContent := user.Username + " has left the chat."
+	targetType := "chat"
+	if conv.Type == "group" {
+		targetType = "group"
+	} else if conv.Type == "channel" {
+		targetType = "channel"
+	}
+
+	systemMsgContent := user.Username + " has left the " + targetType + "."
 	sysMessage, err := server.store.CreateMessage(r.Context(), db.CreateMessageParams{
 		ConversationID: conversationID,
 		SenderID:       authPayload.UserID,
@@ -875,10 +895,24 @@ func (server *Server) leaveConversation(w http.ResponseWriter, r *http.Request) 
 	})
 
 	if err == nil {
-		sysMessage.Content = systemMsgContent
-		participants, _ := server.store.GetConversationParticipants(r.Context(), conversationID)
-		sysProfile := &userProfileResponse{Username: "System", AvatarUrl: ""}
-		go server.hub.Broadcast(participants, newMessageResponse(sysMessage, sysProfile, nil))
+		wsProfile := &userProfileResponse{
+			Username:  user.Username,
+			FirstName: user.FirstName,
+			LastName:  user.LastName,
+			AvatarUrl: user.AvatarUrl.String,
+		}
+		wsResponse := newMessageResponse(sysMessage, wsProfile, nil)
+
+		// 4. RESTRICTED BROADCAST LOGIC
+		if conv.Type == "channel" {
+			// For channels, we only want admins to get the live WebSocket event
+			adminParticipants, _ := server.store.GetAdminParticipants(r.Context(), conversationID)
+			go server.hub.Broadcast(adminParticipants, wsResponse)
+		} else {
+			// For groups and private chats, everyone gets it
+			participants, _ := server.store.GetConversationParticipants(r.Context(), conversationID)
+			go server.hub.Broadcast(participants, wsResponse)
+		}
 	}
 
 	// 4. Execute Delete: Remove the leaving user from the participants table
@@ -1155,16 +1189,16 @@ func (server *Server) consumeInvite(w http.ResponseWriter, r *http.Request) {
 		})
 
 		if err == nil {
-			sysMessage.Content = systemMsgContent
 			participants, _ := server.store.GetConversationParticipants(r.Context(), consumedInvite.ConversationID)
 
-			sysProfile := &userProfileResponse{
-				Username:  "System",
-				FirstName: "System",
-				AvatarUrl: "",
+			userProfile := &userProfileResponse{
+				Username:  user.Username,
+				FirstName: user.FirstName,
+				LastName:  user.LastName,
+				AvatarUrl: user.AvatarUrl.String,
 			}
 
-			wsResponse := newMessageResponse(sysMessage, sysProfile, nil)
+			wsResponse := newMessageResponse(sysMessage, userProfile, nil)
 			go server.hub.Broadcast(participants, wsResponse)
 		} else {
 			log.Printf("Failed to create system join message: %v", err)
