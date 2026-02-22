@@ -772,6 +772,34 @@ func (server *Server) joinChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Broadcast the join message to admins
+	user, err := server.store.GetUserById(r.Context(), authPayload.UserID)
+	if err == nil {
+		systemMsgContent := user.Username + " has joined the channel."
+		sysMessage, err := server.store.CreateMessage(r.Context(), db.CreateMessageParams{
+			ConversationID: conversationID,
+			SenderID:       authPayload.UserID,
+			Content:        "SYSTEM_EVENT:" + systemMsgContent,
+		})
+
+		if err == nil {
+			wsProfile := &userProfileResponse{
+				Username:  user.Username,
+				FirstName: user.FirstName,
+				LastName:  user.LastName,
+				AvatarUrl: user.AvatarUrl.String,
+			}
+			wsResponse := newMessageResponse(sysMessage, wsProfile, nil)
+
+			adminParticipants, _ := server.store.GetAdminParticipants(r.Context(), conversationID)
+			go server.hub.Broadcast(adminParticipants, wsResponse)
+		} else {
+			log.Printf("Failed to create system join message: %v", err)
+		}
+	} else {
+		log.Printf("Failed to fetch user profile for join message: %v", err)
+	}
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Subscribed successfully"})
 }
@@ -965,7 +993,22 @@ func (server *Server) removeParticipant(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// B. Remove Target
+	// B. Fetch user details for the system message
+	targetUser, err := server.store.GetUserById(r.Context(), targetUserID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(errorResponse("Target user not found"))
+		return
+	}
+
+	adminUser, err := server.store.GetUserById(r.Context(), authPayload.UserID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse("Could not fetch admin profile"))
+		return
+	}
+
+	// C. Remove Target
 	err = server.store.RemoveParticipant(r.Context(), db.RemoveParticipantParams{
 		ConversationID: conversationID,
 		UserID:         targetUserID,
@@ -974,6 +1017,30 @@ func (server *Server) removeParticipant(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(errorResponse(InternalServerErrorMsg))
 		return
+	}
+
+	// D. Create System Message & Broadcast
+	systemMsgContent := adminUser.Username + " removed " + targetUser.Username + " from the chat."
+	sysMessage, err := server.store.CreateMessage(r.Context(), db.CreateMessageParams{
+		ConversationID: conversationID,
+		SenderID:       authPayload.UserID,
+		Content:        "SYSTEM_EVENT:" + systemMsgContent,
+	})
+
+	if err == nil {
+		wsProfile := &userProfileResponse{
+			Username:  adminUser.Username,
+			FirstName: adminUser.FirstName,
+			LastName:  adminUser.LastName,
+			AvatarUrl: adminUser.AvatarUrl.String,
+		}
+		wsResponse := newMessageResponse(sysMessage, wsProfile, nil)
+
+		// Broadcast to the remaining participants
+		participants, _ := server.store.GetConversationParticipants(r.Context(), conversationID)
+		go server.hub.Broadcast(participants, wsResponse)
+	} else {
+		log.Printf("Failed to create kick system message: %v", err)
 	}
 
 	w.WriteHeader(http.StatusOK)
