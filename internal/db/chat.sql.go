@@ -573,7 +573,7 @@ FROM conversations
 WHERE type = 'channel'
   AND name ILIKE '%' || $3::text || '%'
 
-ORDER BY search_name
+ORDER BY result_type, search_name
 LIMIT $1 OFFSET $2
 `
 
