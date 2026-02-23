@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
 	"github.com/mahyaarmaleki/messenger-backend/internal/util"
+	"github.com/sashabaranov/go-openai"
 )
 
 func (server *Server) createConversation(w http.ResponseWriter, r *http.Request) {
@@ -1382,4 +1383,89 @@ func (server *Server) globalSearch(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_ = encoder.Encode(res)
+}
+
+func (server *Server) getChatSummary(w http.ResponseWriter, r *http.Request) {
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	encoder := json.NewEncoder(w)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// 1. Security Check: Make sure the user is actually in this chat
+	_, err = server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusForbidden)
+		_ = encoder.Encode(errorResponse("You don't have access to this chat"))
+		return
+	}
+
+	// 2. Fetch the last 50 messages from the database
+	messages, err := server.store.GetConversationMessages(r.Context(), db.GetConversationMessagesParams{
+		ConversationID: conversationID,
+		Limit:          50,
+		Offset:         0,
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse("Failed to fetch messages"))
+		return
+	}
+
+	if len(messages) == 0 {
+		w.WriteHeader(http.StatusOK)
+		_ = encoder.Encode(map[string]string{"summary": "Not enough messages to summarize yet!"})
+		return
+	}
+
+	// 3. Format the messages into a clean transcript for the AI
+	var transcript string
+	// Iterate backwards so the oldest message is at the top of the transcript
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		// Skip system events
+		if strings.HasPrefix(msg.Content, "SYSTEM_EVENT:") {
+			continue
+		}
+		transcript += fmt.Sprintf("[%s]: %s\n", msg.SenderFirstName+" "+msg.SenderLastName, msg.Content)
+	}
+
+	// 4. Call the OpenAI API
+	prompt := "You are a helpful AI assistant. Read the following chat transcript and provide a brief, easy-to-read summary in 2-3 bullet points. Focus on the main topics discussed and any decisions made."
+
+	res, err := server.aiClient.CreateChatCompletion(
+		context.Background(),
+		openai.ChatCompletionRequest{
+			Model: openai.GPT4oMini,
+			Messages: []openai.ChatCompletionMessage{
+				{
+					Role:    openai.ChatMessageRoleSystem,
+					Content: prompt,
+				},
+				{
+					Role:    openai.ChatMessageRoleUser,
+					Content: "Transcript:\n" + transcript,
+				},
+			},
+		},
+	)
+
+	if err != nil {
+		log.Printf("OpenAI API error: %v\n", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse("Failed to generate AI summary"))
+		return
+	}
+
+	summary := res.Choices[0].Message.Content
+
+	w.WriteHeader(http.StatusOK)
+	_ = encoder.Encode(map[string]string{"summary": summary})
 }
