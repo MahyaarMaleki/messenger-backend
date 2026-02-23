@@ -93,6 +93,7 @@ func (server *Server) setupRouter() {
 					r.Get("/role", server.getMyRole)                             // Fetch my role in this chat
 					r.Post("/read", server.MarkConversationAsRead)               // Mark as Read
 					r.Get("/voice/token", server.generateVoiceToken)
+					r.Get("/summary", server.getChatSummary)
 
 					r.Post("/invites", server.generateInvite)
 
