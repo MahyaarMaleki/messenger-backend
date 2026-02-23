@@ -15,6 +15,7 @@ type Config struct {
 	TokenSymmetricKey    string
 	LiveKitAPIKey        string
 	LiveKitAPISecret     string
+	OpenAIAPIKey         string
 	AccessTokenDuration  time.Duration
 	RefreshTokenDuration time.Duration
 }
@@ -30,6 +31,7 @@ func Load() (*Config, error) {
 		TokenSymmetricKey:    getEnv("TOKEN_SYMMETRIC_KEY", ""),
 		LiveKitAPIKey:        getEnv("LIVEKIT_API_KEY", ""),
 		LiveKitAPISecret:     getEnv("LIVEKIT_API_SECRET", ""),
+		OpenAIAPIKey:         getEnv("OPENAI_API_KEY", ""),
 		AccessTokenDuration:  getDurationEnv("ACCESS_TOKEN_DURATION", 15*time.Minute),
 		RefreshTokenDuration: getDurationEnv("REFRESH_TOKEN_DURATION", 24*time.Hour),
 	}
