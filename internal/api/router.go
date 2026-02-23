@@ -84,18 +84,20 @@ func (server *Server) setupRouter() {
 				// Sub-routes for a specific chat
 				r.Route("/{id}", func(r chi.Router) {
 					// Group/Channel Management
-					r.Put("/", server.updateConversation)                        // Rename Group/Channel
-					r.Delete("/leave", server.leaveConversation)                 // Leave chat
-					r.Post("/join", server.joinChannel)                          // Join Channel
-					r.Post("/participants", server.addParticipant)               // Add Member
-					r.Get("/participants", server.getConversationParticipants)   // Fetch Members
-					r.Delete("/participants/{userId}", server.removeParticipant) // Kick Member
-					r.Get("/role", server.getMyRole)                             // Fetch my role in this chat
-					r.Post("/read", server.MarkConversationAsRead)               // Mark as Read
+					r.Put("/", server.updateConversation)          // Rename Group/Channel
+					r.Delete("/leave", server.leaveConversation)   // Leave chat
+					r.Post("/join", server.joinChannel)            // Join Channel
+					r.Get("/role", server.getMyRole)               // Fetch my role in this chat
+					r.Post("/read", server.MarkConversationAsRead) // Mark as Read
 					r.Get("/voice/token", server.generateVoiceToken)
+					r.Post("/invites", server.generateInvite)
 					r.Get("/summary", server.getChatSummary)
 
-					r.Post("/invites", server.generateInvite)
+					// Participant Management
+					r.Post("/participants", server.addParticipant)                  // Add member
+					r.Get("/participants", server.getConversationParticipants)      // Fetch members
+					r.Patch("/participants/{userId}", server.updateParticipantRole) // Change member role
+					r.Delete("/participants/{userId}", server.removeParticipant)    // Kick member
 
 					// Message Management
 					r.Post("/messages", server.createMessage)               // Send
