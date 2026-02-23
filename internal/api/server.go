@@ -10,6 +10,7 @@ import (
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
 	"github.com/mahyaarmaleki/messenger-backend/internal/realtime"
 	"github.com/mahyaarmaleki/messenger-backend/internal/util"
+	"github.com/sashabaranov/go-openai"
 )
 
 type Server struct {
@@ -19,6 +20,7 @@ type Server struct {
 	router     *chi.Mux
 	validator  *validator.Validate
 	hub        *realtime.Hub
+	aiClient   *openai.Client
 }
 
 func NewServer(cfg *config.Config, store *db.Store) (*Server, error) {
@@ -33,6 +35,7 @@ func NewServer(cfg *config.Config, store *db.Store) (*Server, error) {
 		tokenMaker: tokenMaker,
 		validator:  validator.New(),
 		hub:        realtime.NewHub(),
+		aiClient:   openai.NewClient(cfg.OpenAIAPIKey),
 	}
 
 	go server.hub.Run()
