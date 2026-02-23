@@ -71,6 +71,10 @@ type (
 		ExpiresInHours int   `json:"expiresInHours"`
 	}
 
+	updateParticipantRoleRequest struct {
+		Role string `json:"role" validate:"required,oneof=member observer admin"`
+	}
+
 	inviteResponse struct {
 		Token          string    `json:"token"`
 		ConversationID uuid.UUID `json:"conversationId"`
