@@ -19,7 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
 	"github.com/mahyaarmaleki/messenger-backend/internal/util"
-	"github.com/sashabaranov/go-openai"
+	"google.golang.org/genai"
 )
 
 func (server *Server) createConversation(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +131,7 @@ func (server *Server) createConversation(w http.ResponseWriter, r *http.Request)
 			_, err = q.AddParticipant(r.Context(), db.AddParticipantParams{
 				ConversationID: finalConversation.ID,
 				UserID:         authPayload.UserID,
-				Role:           "admin",
+				Role:           "creator",
 			})
 			return err
 		})
@@ -615,7 +615,7 @@ func (server *Server) getConversationParticipants(w http.ResponseWriter, r *http
 
 	// If it's a channel, only admins/creators can see members
 	if conversation.Type == "channel" {
-		if participant.Role != "admin" {
+		if participant.Role != "admin" && participant.Role != "creator" {
 			w.WriteHeader(http.StatusForbidden)
 			_ = encoder.Encode(errorResponse("Only admins can view channel members"))
 			return
@@ -670,7 +670,7 @@ func (server *Server) addParticipant(w http.ResponseWriter, r *http.Request) {
 		ConversationID: conversationID,
 		UserID:         authPayload.UserID,
 	})
-	if err != nil || myself.Role != "admin" {
+	if err != nil || !(myself.Role == "admin" || myself.Role == "creator") {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(errorResponse("Only admins can add members"))
 		return
@@ -988,7 +988,7 @@ func (server *Server) removeParticipant(w http.ResponseWriter, r *http.Request) 
 		ConversationID: conversationID,
 		UserID:         authPayload.UserID,
 	})
-	if err != nil || myself.Role != "admin" {
+	if err != nil || !(myself.Role == "admin" || myself.Role == "creator") {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(errorResponse("Only admins can remove members"))
 		return
@@ -1070,7 +1070,7 @@ func (server *Server) updateConversation(w http.ResponseWriter, r *http.Request)
 		ConversationID: conversationID,
 		UserID:         authPayload.UserID,
 	})
-	if err != nil || myself.Role != "admin" {
+	if err != nil || !(myself.Role == "admin" || myself.Role == "creator") {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(errorResponse("Only admins can update group or channel info"))
 		return
@@ -1144,7 +1144,7 @@ func (server *Server) generateInvite(w http.ResponseWriter, r *http.Request) {
 		ConversationID: conversationID,
 		UserID:         authPayload.UserID,
 	})
-	if err != nil || myself.Role != "admin" {
+	if err != nil || !(myself.Role == "admin" || myself.Role == "creator") {
 		w.WriteHeader(http.StatusForbidden)
 		_ = encoder.Encode(errorResponse("Only admins can generate invite links"))
 		return
@@ -1437,34 +1437,24 @@ func (server *Server) getChatSummary(w http.ResponseWriter, r *http.Request) {
 		transcript += fmt.Sprintf("[%s]: %s\n", msg.SenderFirstName+" "+msg.SenderLastName, msg.Content)
 	}
 
-	// 4. Call the OpenAI API
-	prompt := "You are a helpful AI assistant. Read the following chat transcript and provide a brief, easy-to-read summary in 2-3 bullet points. Focus on the main topics discussed and any decisions made."
+	// 4. Call the Gemini API
+	prompt := "You are a helpful AI assistant. Read the following chat transcript and provide a brief, easy-to-read summary in 2-3 bullet points. Focus on the main topics discussed and any decisions made.\n\nTranscript:\n" + transcript
 
-	res, err := server.aiClient.CreateChatCompletion(
-		context.Background(),
-		openai.ChatCompletionRequest{
-			Model: openai.GPT4oMini,
-			Messages: []openai.ChatCompletionMessage{
-				{
-					Role:    openai.ChatMessageRoleSystem,
-					Content: prompt,
-				},
-				{
-					Role:    openai.ChatMessageRoleUser,
-					Content: "Transcript:\n" + transcript,
-				},
-			},
-		},
+	resp, err := server.aiClient.Models.GenerateContent(
+		r.Context(),
+		"gemini-2.5-flash",
+		genai.Text(prompt),
+		nil,
 	)
 
 	if err != nil {
-		log.Printf("OpenAI API error: %v\n", err)
+		log.Printf("Gemini API error: %v\n", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = encoder.Encode(errorResponse("Failed to generate AI summary"))
 		return
 	}
 
-	summary := res.Choices[0].Message.Content
+	summary := resp.Text()
 
 	w.WriteHeader(http.StatusOK)
 	_ = encoder.Encode(map[string]string{"summary": summary})
