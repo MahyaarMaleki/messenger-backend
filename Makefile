@@ -10,6 +10,13 @@ GOOSE_DRIVER=postgres
 GOOSE_DBSTRING=$(DB_SOURCE)
 GOOSE_MIGRATION_DIR=database/migrations
 
+# -- Production Build & Compress --
+build-prod:
+	@echo "Building optimized production binary..."
+	go build -trimpath -ldflags="-s -w" -o bin/$(BINARY_NAME) cmd/api/main.go
+	@echo "Compressing with UPX..."
+	upx --best --lzma bin/$(BINARY_NAME)
+
 # -- Build & Run --
 build:
 	@echo "Building..."
