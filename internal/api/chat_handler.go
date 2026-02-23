@@ -1308,6 +1308,102 @@ func (server *Server) getMyRole(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"role": participant.Role})
 }
 
+// Update Participant Role (Creator Only)
+func (server *Server) updateParticipantRole(w http.ResponseWriter, r *http.Request) {
+	encoder := json.NewEncoder(w)
+	conversationID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse("Invalid conversation ID"))
+		return
+	}
+
+	req := new(updateParticipantRoleRequest)
+	if err := json.NewDecoder(r.Body).Decode(req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse(InvalidJsonMsg))
+		return
+	}
+
+	if !server.validateRequest(w, req, encoder) {
+		return
+	}
+
+	targetUserID, err := uuid.Parse(chi.URLParam(r, "userId"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = encoder.Encode(errorResponse("Invalid user ID"))
+		return
+	}
+
+	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
+
+	// A. Check My Role (Must be the creator)
+	myself, err := server.store.GetParticipant(r.Context(), db.GetParticipantParams{
+		ConversationID: conversationID,
+		UserID:         authPayload.UserID,
+	})
+	if err != nil || myself.Role != "creator" {
+		w.WriteHeader(http.StatusForbidden)
+		_ = encoder.Encode(errorResponse("Only the chat creator can promote members"))
+		return
+	}
+
+	// B. Fetch target user to ensure they exist and to get their name for the system message
+	targetUser, err := server.store.GetUserById(r.Context(), targetUserID)
+	if err != nil {
+		w.WriteHeader(http.StatusNotFound)
+		_ = encoder.Encode(errorResponse("Target user not found"))
+		return
+	}
+
+	creatorUser, _ := server.store.GetUserById(r.Context(), authPayload.UserID)
+
+	// C. Update the target's role in the database
+	// (You will need to add this query to your sqlc files if you haven't already!)
+	err = server.store.UpdateParticipantRole(r.Context(), db.UpdateParticipantRoleParams{
+		ConversationID: conversationID,
+		UserID:         targetUserID,
+		Role:           req.Role,
+	})
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = encoder.Encode(errorResponse("Failed to update user role"))
+		return
+	}
+
+	// D. Broadcast a System Message
+	var actionText string
+	if req.Role == "admin" {
+		actionText = "promoted " + targetUser.Username + " to Admin."
+	} else {
+		actionText = "changed " + targetUser.Username + "'s role to " + req.Role + "."
+	}
+
+	sysMessage, err := server.store.CreateMessage(r.Context(), db.CreateMessageParams{
+		ConversationID: conversationID,
+		SenderID:       authPayload.UserID,
+		Content:        "SYSTEM_EVENT:" + creatorUser.Username + " " + actionText,
+	})
+
+	if err == nil {
+		wsProfile := &userProfileResponse{
+			Username:  creatorUser.Username,
+			FirstName: creatorUser.FirstName,
+			LastName:  creatorUser.LastName,
+			AvatarUrl: creatorUser.AvatarUrl.String,
+		}
+		wsResponse := newMessageResponse(sysMessage, wsProfile, nil)
+
+		// Broadcast to all participants
+		participants, _ := server.store.GetConversationParticipants(r.Context(), conversationID)
+		go server.hub.Broadcast(participants, wsResponse)
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_ = encoder.Encode(map[string]string{"message": "Role updated successfully"})
+}
+
 func (server *Server) checkInviteStatus(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 	authPayload := r.Context().Value(authorizationPayloadKey).(*util.TokenPayload)
