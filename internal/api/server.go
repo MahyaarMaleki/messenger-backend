@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/mahyaarmaleki/messenger-backend/internal/db"
 	"github.com/mahyaarmaleki/messenger-backend/internal/realtime"
 	"github.com/mahyaarmaleki/messenger-backend/internal/util"
-	"github.com/sashabaranov/go-openai"
+	"google.golang.org/genai"
 )
 
 type Server struct {
@@ -20,7 +21,7 @@ type Server struct {
 	router     *chi.Mux
 	validator  *validator.Validate
 	hub        *realtime.Hub
-	aiClient   *openai.Client
+	aiClient   *genai.Client
 }
 
 func NewServer(cfg *config.Config, store *db.Store) (*Server, error) {
@@ -29,13 +30,18 @@ func NewServer(cfg *config.Config, store *db.Store) (*Server, error) {
 		return nil, fmt.Errorf("cannot create token maker: %w", err)
 	}
 
+	client, err := genai.NewClient(context.Background(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
+	}
+
 	server := &Server{
 		config:     cfg,
 		store:      store,
 		tokenMaker: tokenMaker,
 		validator:  validator.New(),
 		hub:        realtime.NewHub(),
-		aiClient:   openai.NewClient(cfg.OpenAIAPIKey),
+		aiClient:   client,
 	}
 
 	go server.hub.Run()
