@@ -14,7 +14,6 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/livekit/protocol v1.44.0
 	github.com/o1egl/paseto v1.0.0
-	github.com/sashabaranov/go-openai v1.41.2
 	golang.org/x/crypto v0.46.0
 	google.golang.org/genai v1.47.0
 )
